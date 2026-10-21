@@ -1,0 +1,45 @@
+number of parameters: 1.79M
+out-addition-additive-v22/ckpt.pt iter=9500  R=24 L=14
+
+[F1] carry injection efficacy (non-propagating: da+db in 2..6 at place p)
+  patch@round  1: digit[p]->+1 in 0.00   spill to p+1 0.00   rest-unchanged 1.00
+  patch@round  2: digit[p]->+1 in 0.00   spill to p+1 0.00   rest-unchanged 1.00
+  patch@round  3: digit[p]->+1 in 0.00   spill to p+1 0.00   rest-unchanged 1.00
+  patch@round  4: digit[p]->+1 in 0.00   spill to p+1 0.00   rest-unchanged 1.00
+  patch@round  5: digit[p]->+1 in 0.00   spill to p+1 0.00   rest-unchanged 1.00
+  patch@round  6: digit[p]->+1 in 0.01   spill to p+1 0.00   rest-unchanged 1.00
+  patch@round  8: digit[p]->+1 in 0.33   spill to p+1 0.00   rest-unchanged 1.00
+  patch@round 10: digit[p]->+1 in 0.80   spill to p+1 0.00   rest-unchanged 1.00
+  patch@round 14: digit[p]->+1 in 1.00   spill to p+1 0.00   rest-unchanged 1.00
+  CONTROL patch far place p-3 @round 4: answer unchanged in 1.00
+
+[F2] wavefront speed (inject carry at p, places p..p+M all sum to 9)
+  base (unpatched) has 9s at p..p+6 in 1.00 of cases
+  inject@r8: full-ripple 0.00  first-flip by k=[None, None, None, None, None, None, None]  slope=None rounds/place
+  inject@r10: full-ripple 0.00  first-flip by k=[None, None, None, None, None, None, None]  slope=None rounds/place
+  inject@r12: full-ripple 0.00  first-flip by k=[12.0, None, None, None, None, None, None]  slope=None rounds/place
+  inject@r14: full-ripple 0.00  first-flip by k=[14.0, None, None, None, None, None, None]  slope=None rounds/place
+  inject@r16: full-ripple 0.00  first-flip by k=[16.0, None, None, None, None, None, None]  slope=None rounds/place
+  => best inject round 8: wavefront ~ None rounds/place, full ripple 0.00
+
+[F3] direction-vector carry injection (inject at an early round, measure ripple)
+  typical place-token norm ~ 644.2
+  inject r3 alpha 0.5: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r3 alpha 1.0: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r3 alpha 2.0: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r5 alpha 0.5: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r5 alpha 1.0: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r5 alpha 2.0: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r8 alpha 0.5: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r8 alpha 1.0: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r8 alpha 2.0: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r12 alpha 0.5: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r12 alpha 1.0: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+  inject r12 alpha 2.0: full-ripple 0.00  flip-by-k [None, None, None, None, None, None, None]  slope None
+
+[F4] natural carry ripple speed (paired clean runs, no patching)
+  base decodes as full 9-run: 0.73   carry version fully rippled: 1.00
+  first-flip round by place k: [8.0, 3.9, 5.2, 10.8, 13.5, 16.0, 17.3, 19.0, 20.6, 22.5, 23.6, 23.0]
+  => natural wavefront ~ 1.85 rounds/place (intercept 5.1)
+
+saved -> out-addition-additive-v22\probe_combiner_patch.json, dyn_F_patch.png

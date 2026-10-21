@@ -1,0 +1,41 @@
+number of parameters: 1.79M
+out-addition-additive-v22/ckpt.pt  iter=9500  R=24 P=30
+collecting combiner states ...
+
+[C] place-token linear probes  (test accuracy by round)
+  da        baseline=0.624  r0=0.846 r1=1.000 r2=0.994 r4=0.991 r8=0.986 r12=0.982 r24=0.970
+  db        baseline=0.733  r0=0.928 r1=1.000 r2=1.000 r4=0.996 r8=0.992 r12=0.991 r24=0.974
+  sum_nc    baseline=0.615  r0=0.628 r1=0.974 r2=0.990 r4=0.999 r8=1.000 r12=0.999 r24=1.000
+  carry_in  baseline=0.777  r0=0.810 r1=0.861 r2=0.941 r4=0.984 r8=0.998 r12=1.000 r24=1.000
+  carry_out baseline=0.777  r0=0.908 r1=0.983 r2=0.992 r4=0.999 r8=1.000 r12=1.000 r24=1.000
+  final     baseline=0.647  r0=0.664 r1=0.852 r2=0.876 r4=0.918 r8=0.954 r12=0.983 r24=1.000
+
+[C-think] thinking-token (mean-pooled) probes
+  r 0: total-carry-count exact=0.10 within1=0.29   solved-flag acc=None
+  r 1: total-carry-count exact=0.23 within1=0.48   solved-flag acc=None
+  r 2: total-carry-count exact=0.23 within1=0.53   solved-flag acc=None
+  r 3: total-carry-count exact=0.26 within1=0.57   solved-flag acc=None
+  r 4: total-carry-count exact=0.25 within1=0.62   solved-flag acc=None
+  r 5: total-carry-count exact=0.27 within1=0.60   solved-flag acc=None
+  r 6: total-carry-count exact=0.25 within1=0.57   solved-flag acc=None
+  r 7: total-carry-count exact=0.25 within1=0.55   solved-flag acc=0.9933333333333333
+  r 8: total-carry-count exact=0.25 within1=0.55   solved-flag acc=0.9733333333333334
+  r 9: total-carry-count exact=0.23 within1=0.53   solved-flag acc=0.9466666666666667
+  r10: total-carry-count exact=0.24 within1=0.54   solved-flag acc=0.86
+  r11: total-carry-count exact=0.25 within1=0.57   solved-flag acc=0.8
+  r12: total-carry-count exact=0.27 within1=0.60   solved-flag acc=0.7666666666666667
+  r13: total-carry-count exact=0.25 within1=0.59   solved-flag acc=0.8533333333333334
+  r14: total-carry-count exact=0.27 within1=0.59   solved-flag acc=0.8533333333333334
+  r15: total-carry-count exact=0.26 within1=0.58   solved-flag acc=0.8666666666666667
+  r16: total-carry-count exact=0.26 within1=0.57   solved-flag acc=0.84
+  r17: total-carry-count exact=0.26 within1=0.57   solved-flag acc=0.8933333333333333
+  r18: total-carry-count exact=0.26 within1=0.57   solved-flag acc=0.9666666666666667
+  r19: total-carry-count exact=0.25 within1=0.57   solved-flag acc=0.9866666666666667
+  r20: total-carry-count exact=0.25 within1=0.57   solved-flag acc=None
+  r21: total-carry-count exact=0.25 within1=0.58   solved-flag acc=None
+  r22: total-carry-count exact=0.26 within1=0.57   solved-flag acc=None
+  r23: total-carry-count exact=0.27 within1=0.57   solved-flag acc=None
+  r24: total-carry-count exact=0.28 within1=0.59   solved-flag acc=None
+
+saved -> out-addition-additive-v22\probe_combiner_carry.json
+plots -> out-addition-additive-v22/dyn_C_place_probes.png, dyn_C_by_placetype.png

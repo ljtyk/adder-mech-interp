@@ -1,0 +1,32 @@
+Overriding: out_dir = out-addition-additive-v33
+Overriding: ckpt_name = ckpt_15000.pt
+Overriding: device = cpu
+Overriding: dataset_dir = data/addition
+number of parameters: 1.81M
+
+=== test_indist ===
+reconstruct-A accuracy: 1.0000  by operand-A's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0}
+reconstruct-B accuracy: 1.0000  by operand-B's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0}
+sum accuracy:           0.9983  by digit count: {1: 1.0, 2: 1.0, 3: 0.995, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 0.995, 10: 0.995}
+
+=== test_gap ===
+reconstruct-A accuracy: 1.0000  by operand-A's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0, 11: 1.0, 12: 1.0, 13: 1.0}
+reconstruct-B accuracy: 1.0000  by operand-B's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0, 11: 1.0, 12: 1.0, 13: 1.0}
+sum accuracy:           0.9967  by digit count: {11: 0.995, 12: 0.995, 13: 1.0}
+
+=== test_hint ===
+reconstruct-A accuracy: 1.0000  by operand-A's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0, 11: 1.0, 12: 1.0, 13: 1.0, 14: 1.0, 15: 1.0, 16: 1.0, 17: 1.0, 18: 1.0}
+reconstruct-B accuracy: 1.0000  by operand-B's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0, 11: 1.0, 12: 1.0, 13: 1.0, 14: 1.0, 15: 1.0, 16: 1.0, 17: 1.0, 18: 1.0}
+sum accuracy:           0.9990  by digit count: {14: 1.0, 15: 1.0, 16: 1.0, 17: 0.995, 18: 1.0}
+
+=== test_ood ===
+reconstruct-A accuracy: 1.0000  by operand-A's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0, 11: 1.0, 12: 1.0, 13: 1.0, 14: 1.0, 15: 1.0, 16: 1.0, 17: 1.0, 18: 1.0, 19: 1.0, 20: 1.0, 21: 1.0}
+reconstruct-B accuracy: 1.0000  by operand-B's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0, 11: 1.0, 12: 1.0, 13: 1.0, 14: 1.0, 15: 1.0, 16: 1.0, 17: 1.0, 18: 1.0, 19: 1.0, 20: 1.0, 21: 1.0}
+sum accuracy:           0.9983  by digit count: {19: 1.0, 20: 1.0, 21: 0.995}
+
+=== test_far_ood ===
+reconstruct-A accuracy: 1.0000  by operand-A's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0, 11: 1.0, 12: 1.0, 13: 1.0, 14: 1.0, 15: 1.0, 16: 1.0, 17: 1.0, 18: 1.0, 19: 1.0, 20: 1.0, 21: 1.0, 22: 1.0, 23: 1.0, 24: 1.0, 25: 1.0, 26: 1.0}
+reconstruct-B accuracy: 1.0000  by operand-B's own length: {1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0, 7: 1.0, 8: 1.0, 9: 1.0, 10: 1.0, 11: 1.0, 12: 1.0, 13: 1.0, 14: 1.0, 15: 1.0, 16: 1.0, 17: 1.0, 18: 1.0, 19: 1.0, 20: 1.0, 21: 1.0, 22: 1.0, 23: 1.0, 24: 1.0, 25: 1.0, 26: 1.0}
+sum accuracy:           1.0000  by digit count: {24: 1.0, 25: 1.0, 26: 1.0}
+
+saved results to out-addition-additive-v33\eval_additive_results.json

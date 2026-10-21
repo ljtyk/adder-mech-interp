@@ -1,0 +1,1606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What the Adder Learned</title>
+<meta name="description" content="Mechanistic interpretability of a small transformer that adds numbers at lengths it was never trained on: what each digit position computes, how a carry travels, why the answer drifts, and where the fix runs out.">
+<style>
+
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #f6f3ec;
+    --surface: #fffdf8;
+    --surface-2: #efeade;
+    --ink: #22262e;
+    --ink-soft: #565c69;
+    --ink-faint: #8a8d92;
+    --accent: #1e6e76;
+    --accent-ink: #ffffff;
+    --fail: #a8431f;
+    --ok: #2f7a4f;
+    --line: rgba(34,38,46,0.14);
+    --line-soft: rgba(34,38,46,0.07);
+    --shadow: 0 1px 2px rgba(34,38,46,0.06), 0 8px 24px rgba(34,38,46,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1b1d22;
+      --surface: #24272e;
+      --surface-2: #2c2f37;
+      --ink: #ece8de;
+      --ink-soft: #adaaa2;
+      --ink-faint: #7d7f85;
+      --accent: #6bc9d1;
+      --accent-ink: #12292c;
+      --fail: #e08a63;
+      --ok: #7fc79b;
+      --line: rgba(236,232,222,0.14);
+      --line-soft: rgba(236,232,222,0.07);
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1b1d22;
+    --surface: #24272e;
+    --surface-2: #2c2f37;
+    --ink: #ece8de;
+    --ink-soft: #adaaa2;
+    --ink-faint: #7d7f85;
+    --accent: #6bc9d1;
+    --accent-ink: #12292c;
+    --fail: #e08a63;
+    --ok: #7fc79b;
+    --line: rgba(236,232,222,0.14);
+    --line-soft: rgba(236,232,222,0.07);
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Newsreader', Georgia, 'Times New Roman', serif;
+    font-size: 19px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+
+  .page {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 4.5rem 1.5rem 7rem;
+  }
+  .wide {
+    max-width: 920px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* ---------- masthead ---------- */
+  .kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 1.1rem;
+  }
+  h1.title {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+    font-weight: 600;
+    font-size: clamp(2.6rem, 6vw, 4rem);
+    line-height: 1.02;
+    letter-spacing: -0.01em;
+    margin: 0 0 1.4rem;
+    text-wrap: balance;
+  }
+  .dek {
+    font-size: 1.28rem;
+    color: var(--ink-soft);
+    max-width: 34em;
+    margin: 0 0 2.2rem;
+    text-wrap: balance;
+  }
+  .byline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--ink-faint);
+    padding-top: 1.6rem;
+    border-top: 1px solid var(--line);
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  /* ---------- headline stat pair ---------- */
+  .stat-duel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 2.6rem 0;
+  }
+  .stat-cell {
+    background: var(--surface);
+    padding: 1.9rem 1.6rem;
+  }
+  .stat-cell .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 0.7rem;
+  }
+  .stat-cell .num {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 3rem;
+    line-height: 1;
+  }
+  .stat-cell.fail .num { color: var(--fail); }
+  .stat-cell.ok .num { color: var(--ok); }
+  .stat-cell .sub {
+    font-family: 'Newsreader', serif;
+    font-size: 15.5px;
+    color: var(--ink-soft);
+    margin-top: 0.6rem;
+  }
+
+  /* ---------- prose ---------- */
+  h2 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.85rem;
+    letter-spacing: -0.005em;
+    margin: 3.4rem 0 1.1rem;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.28rem;
+    margin: 2.2rem 0 0.8rem;
+  }
+  p { margin: 0 0 1.3rem; }
+  strong { font-weight: 600; }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.86em;
+    background: var(--surface-2);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+  }
+
+  .lede::first-letter {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 600;
+    font-size: 3.4em;
+    float: left;
+    line-height: 0.85;
+    padding: 0.04em 0.09em 0 0;
+    color: var(--accent);
+  }
+
+  /* ---------- section rule ---------- */
+  .ledger {
+    height: 1px;
+    margin: 3.6rem 0;
+    background-image: repeating-linear-gradient(90deg, var(--line) 0, var(--line) 6px, transparent 6px, transparent 14px);
+  }
+
+  /* ---------- lesson blocks ---------- */
+  .lesson {
+    display: grid;
+    grid-template-columns: 2.6rem 1fr;
+    gap: 0.9rem;
+    margin: 2.6rem 0;
+  }
+  .lesson .n {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--accent);
+    padding-top: 0.15em;
+  }
+  .lesson h3 { margin: 0 0 0.6rem; }
+  .lesson .body p:last-child { margin-bottom: 0; }
+
+  /* ---------- aside / margin note ---------- */
+  .note {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 1.1rem 1.3rem;
+    margin: 1.6rem 0;
+    box-shadow: var(--shadow);
+  }
+  .note .note-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .note p { font-size: 0.94em; margin-bottom: 0.6rem; }
+  .note p:last-child { margin-bottom: 0; }
+
+  /* ---------- data table ---------- */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    margin: 1.8rem 0;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 480px; }
+  caption {
+    text-align: left;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding: 0.9rem 1.1rem 0;
+  }
+  th, td {
+    font-family: 'JetBrains Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    padding: 0.65rem 1.1rem;
+    text-align: right;
+    border-bottom: 1px solid var(--line-soft);
+    white-space: nowrap;
+  }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    color: var(--ink-faint);
+    font-weight: 600;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--line);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.hi { color: var(--ok); font-weight: 600; }
+  td.lo { color: var(--fail); font-weight: 600; }
+  tr.split td { border-top: 2px dashed var(--line); }
+
+  /* ---------- pipeline diagram ---------- */
+  .diagram {
+    margin: 1.8rem 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.2rem;
+    box-shadow: var(--shadow);
+  }
+  .diagram svg { width: 100%; height: auto; display: block; }
+
+  /* ---------- verdict box ---------- */
+  .verdict {
+    background: var(--surface-2);
+    border-radius: 10px;
+    padding: 1.8rem 2rem;
+    margin: 2.2rem 0;
+  }
+  .verdict .note-label { color: var(--ink-soft); }
+  .verdict h3 { margin-top: 0; }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.6rem;
+    border-top: 1px solid var(--line);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    color: var(--ink-faint);
+  }
+
+  @media (max-width: 640px) {
+    body { font-size: 17px; }
+    .stat-duel { grid-template-columns: 1fr; }
+    .lesson { grid-template-columns: 1fr; }
+    .lesson .n { padding-top: 0; }
+  }
+
+
+  :root { --s1: #00849c; --s2: #c4501c; --s3: #7a55b0; --s4: #3d8a3a; --ctx: #8a8d92;
+          --t1: #a9d3d9; --t2: #6bb6c0; --t3: #2f98a6; --t4: #0c6571; --t5: #c4501c; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+          --s1: #1fa3ae; --s2: #d9703e; --s3: #a98bd8; --s4: #6fbf6a; --ctx: #7d7f85;
+          --t1: #355a60; --t2: #4a8a93; --t3: #5fb1bb; --t4: #94dde6; --t5: #e08a63; } }
+  :root[data-theme="dark"] { --s1: #1fa3ae; --s2: #d9703e; --s3: #a98bd8; --s4: #6fbf6a; --ctx: #7d7f85;
+          --t1: #355a60; --t2: #4a8a93; --t3: #5fb1bb; --t4: #94dde6; --t5: #e08a63; }
+  svg.chart { width: 100%; height: auto; display: block; margin: 0.4rem 0 1.4rem; overflow: visible; }
+  svg.chart .grid { stroke: var(--line-soft); stroke-width: 1; }
+  svg.chart .axis { stroke: var(--line); stroke-width: 1; }
+  svg.chart .ref { stroke: var(--ink-faint); stroke-width: 1; stroke-dasharray: 3 3; }
+  svg.chart .shade { fill: var(--ink-faint); opacity: 0.10; }
+  svg.chart .tick { fill: var(--ink-faint); font: 11px 'JetBrains Mono', monospace; }
+  svg.chart .shade-label { fill: var(--ink-soft); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+  .table-wrap table.compact th, .table-wrap table.compact td { padding: 0.6rem 0.65rem; font-size: 13px; }
+  .table-wrap table.compact { min-width: 0; }
+  svg.chart .axis-label { fill: var(--ink-soft); font: 12px 'Newsreader', serif; }
+  svg.chart .direct { fill: var(--ink-soft); font: 12px 'Newsreader', serif; }
+  svg.chart .series { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+  svg.chart .dot { stroke: var(--surface); stroke-width: 2; }
+  svg.chart .hit { fill: transparent; }
+  .fig-cap { font-size: 0.88rem; color: var(--ink-soft); margin: -0.6rem 0 1.6rem; }
+  .fig-title { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase;
+               color: var(--ink-faint); margin: 1.8rem 0 0; }
+  ol.steps > li, ul.points > li { margin-bottom: 0.7rem; }
+  td .hi { color: var(--ok); font-weight: 600; }
+  td .lo { color: var(--fail); font-weight: 600; }
+  .refs li { font-size: 0.92rem; margin-bottom: 0.35rem; }
+
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <div class="kicker">research notebook &middot; mechanistic interpretability</div>
+  <h1 class="title">What the Adder Learned</h1>
+  <p class="dek">A small transformer, built for the job, adds numbers a few digits longer than any it was trained on. <a href="https://ljtyk.github.io/carry-the-one/">Carry the One</a> asked how to build it. This post opens it up. Recording its state after every round of computation, probing what each digit position knows, following attention, and swapping states between runs gives a consistent picture: every digit does its own arithmetic at once, a carry then moves along the number one place at a time, and the answer slowly settles. The same measurements explain two of its failures and pointed to a training change that removes one of them. A final test shows that change moved the limit; it did not remove it.</p>
+  <div class="byline">
+    <span>research log</span>
+    <span>three checkpoints, 1.8M parameters each</span>
+    <span>written with Claude (Anthropic) as research assistant</span>
+  </div>
+
+  <div class="stat-duel">
+    <div class="stat-cell fail">
+      <div class="label">v22 &middot; run 40 rounds past the 24 it was trained for</div>
+      <div class="num">59%</div>
+      <div class="sub">exact match on 19&ndash;21 digit problems after 64 rounds (150 random problems). At round 24, on the same problems: 97% (100% on the full test set). The answer is there, then it drifts away.</div>
+    </div>
+    <div class="stat-cell ok">
+      <div class="label">v33 &middot; run 40 rounds past the 80 it was trained for</div>
+      <div class="num">100%</div>
+      <div class="sub">same problems after 120 rounds (60 random problems), and every other length tested. Trained with a random number of rounds per batch and, in this model, longer problems.</div>
+    </div>
+  </div>
+
+  <p class="lede">The model from Carry the One reads two numbers, writes each into a fixed set of slots, repeats one transformer block over those slots, and reads the sum back out. It was trained on operands of up to 20 digits and is exact at 21; what it was not asked to do is explain itself. Its computation is small enough to take apart: one block, repeated, with a handful of numbers on every digit position at every round. I wanted to know what the block is doing in those rounds, and whether knowing that would say anything useful about where the model fails.</p>
+
+  <h2>Findings at a glance</h2>
+  <ol class="steps">
+    <li><strong>Time to a correct answer tracks the number of digits, not the longest carry chain</strong> (correlation 0.93 against 0.33 in v22).</li>
+    <li><strong>Each place computes in a fixed order</strong>: its own digit sum and its own carry-out within the first two rounds, then whether a carry arrives, then the final digit. The place that is right last is usually where a carry chain ends (9 of 12 crafted chains; in the rest, where it starts).</li>
+    <li><strong>The carry travels one place at a time.</strong> Attention concentrates on the next place down (about 19% of a place&rsquo;s attention in a 16-digit problem). Along a run of nines a carry advances about 1.85 rounds per place. That is linear in the length of the chain; I found no sign of carry-lookahead.</li>
+    <li><strong>The carry is a real, readable quantity.</strong> Swapping one place&rsquo;s state from a run where a carry arrives into a run where it does not changes that place&rsquo;s answer digit by exactly one (swapped in at round 14, 100% of 240 problems), and changes nothing else.</li>
+    <li><strong>The four scratch tokens are not interchangeable.</strong> Replacing token 0 breaks every length; token 2 can be zeroed with no effect; token 3 matters more the longer the problem. Together they carry the problem&rsquo;s length (98% decodable) but not its carry statistics.</li>
+    <li><strong>The model never reaches a fixed point.</strong> v22&rsquo;s state keeps moving in one direction after the answer is right, and, depending on the length of the problem, somewhere between round 25 and round 50 it leaves the answer behind. Training with a random number of rounds removes that within the lengths it was trained on.</li>
+    <li><strong>The fix has a boundary.</strong> v33 is at 99.5% or better through 64 digits (its training limit), 99.0% at 72 and 74.5% at 80. Running it 60 rounds longer changes nothing, so the limit is how long a problem the model was trained on, not how long it computes.</li>
+  </ol>
+
+  <div class="ledger"></div>
+
+  <h2>The model</h2>
+  <p>Numbers go in as digits, one per place, units first. Each digit becomes three numbers (one of ten learned &ldquo;codewords&rdquo;) written into that place&rsquo;s own slot, so place 7 always means the same three of 384 dimensions no matter how long the number is, and short numbers are padded with zeros out to 30 places. The <strong>combiner</strong> then turns each place&rsquo;s two codewords into a vector (a &ldquo;place token&rdquo;), adds four learned <strong>scratch tokens</strong> (called thinking tokens in the code), and applies one transformer block &mdash; six-head attention that every token can use on every other, then an MLP &mdash; again and again with the same weights. After the last round each place&rsquo;s vector is cut back to three numbers and read as the nearest codeword. The last step has no parameters, and the first has about forty; the arithmetic is all in the repeated block.</p>
+  <div class="diagram">
+<svg viewBox="0 0 870 282" role="img" aria-label="Pipeline: two numbers are encoded digit by digit into place slots, a transformer block is applied repeatedly to place tokens and four scratch tokens, and each place is decoded to a digit in parallel">
+  <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill: var(--ink-faint)"/></marker></defs>
+  <g style="font: 12.5px 'Newsreader', serif; fill: var(--ink)">
+    <text x="12" y="30" style="font: 11px 'JetBrains Mono', monospace; fill: var(--ink-faint)">INPUT</text>
+    <g style="font: 600 15px 'JetBrains Mono', monospace">
+      <text x="12" y="62">1 2 3 4 5</text><text x="12" y="92">+ 6 7 8</text>
+    </g>
+    <text x="12" y="124" style="fill: var(--ink-soft)">two numbers,</text><text x="12" y="141" style="fill: var(--ink-soft)">digit by digit</text>
+
+    <line x1="112" y1="76" x2="146" y2="76" style="stroke: var(--ink-faint)" stroke-width="1.5" marker-end="url(#arr)"/>
+
+    <rect x="150" y="14" width="210" height="210" rx="9" style="fill: var(--surface-2); stroke: var(--line)"/>
+    <text x="165" y="38" style="font: 11px 'JetBrains Mono', monospace; fill: var(--accent); letter-spacing: .08em">1 &#183; ENCODE</text>
+    <text x="165" y="62" style="font: 600 14px 'Fraunces', serif">fixed codec</text>
+    <text x="165" y="88" style="fill: var(--ink-soft)">each digit becomes 3 numbers</text>
+    <text x="165" y="106" style="fill: var(--ink-soft)">(one of 10 learned codewords)</text>
+    <text x="165" y="132" style="fill: var(--ink-soft)">written into that place&#8217;s own</text>
+    <text x="165" y="150" style="fill: var(--ink-soft)">slot, units first. 30 slots;</text>
+    <text x="165" y="168" style="fill: var(--ink-soft)">short numbers padded with 0s</text>
+    <text x="165" y="206" style="font: 11px 'JetBrains Mono', monospace; fill: var(--ink-faint)">~40 learned numbers</text>
+
+    <line x1="362" y1="119" x2="396" y2="119" style="stroke: var(--ink-faint)" stroke-width="1.5" marker-end="url(#arr)"/>
+
+    <rect x="400" y="14" width="270" height="210" rx="9" style="fill: var(--surface); stroke: var(--accent); stroke-width: 1.5"/>
+    <text x="415" y="38" style="font: 11px 'JetBrains Mono', monospace; fill: var(--accent); letter-spacing: .08em">2 &#183; COMBINE</text>
+    <text x="662" y="30" text-anchor="end" style="font: 11px 'JetBrains Mono', monospace; fill: var(--accent)">&#215; N rounds</text>
+    <text x="415" y="60" style="font: 600 14px 'Fraunces', serif">the learned part</text>
+    <g style="font: 10.5px 'JetBrains Mono', monospace">
+      <rect x="415" y="72" width="24" height="20" rx="3" style="fill: var(--surface-2); stroke: var(--line)"/><text x="421" y="86" style="fill: var(--ink-soft)">p0</text>
+      <rect x="443" y="72" width="24" height="20" rx="3" style="fill: var(--surface-2); stroke: var(--line)"/><text x="449" y="86" style="fill: var(--ink-soft)">p1</text>
+      <rect x="471" y="72" width="24" height="20" rx="3" style="fill: var(--surface-2); stroke: var(--line)"/><text x="477" y="86" style="fill: var(--ink-soft)">p2</text>
+      <text x="500" y="86" style="fill: var(--ink-faint)">&#8230;</text>
+      <rect x="516" y="72" width="30" height="20" rx="3" style="fill: var(--surface-2); stroke: var(--line)"/><text x="520" y="86" style="fill: var(--ink-soft)">p29</text>
+      <rect x="560" y="72" width="18" height="20" rx="3" style="fill: var(--accent); opacity: .85"/>
+      <rect x="582" y="72" width="18" height="20" rx="3" style="fill: var(--accent); opacity: .85"/>
+      <rect x="604" y="72" width="18" height="20" rx="3" style="fill: var(--accent); opacity: .85"/>
+      <rect x="626" y="72" width="18" height="20" rx="3" style="fill: var(--accent); opacity: .85"/>
+    </g>
+    <path d="M 635 96 C 635 124, 426 124, 426 96" fill="none" style="stroke: var(--accent)" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="415" y="148" style="fill: var(--ink-soft)">30 place tokens + 4 scratch tokens</text>
+    <text x="415" y="168" style="fill: var(--ink-soft)">one attention + MLP block, the same</text>
+    <text x="415" y="185" style="fill: var(--ink-soft)">weights applied again and again</text>
+    <text x="415" y="202" style="fill: var(--ink-soft)">(24 rounds; 80 in v33)</text>
+    <text x="415" y="216" style="font: 11px 'JetBrains Mono', monospace; fill: var(--ink-faint)">1.8M parameters, almost all here</text>
+
+    <line x1="672" y1="119" x2="706" y2="119" style="stroke: var(--ink-faint)" stroke-width="1.5" marker-end="url(#arr)"/>
+
+    <rect x="710" y="14" width="150" height="210" rx="9" style="fill: var(--surface-2); stroke: var(--line)"/>
+    <text x="724" y="38" style="font: 11px 'JetBrains Mono', monospace; fill: var(--accent); letter-spacing: .08em">3 &#183; DECODE</text>
+    <text x="724" y="62" style="font: 600 14px 'Fraunces', serif">no parameters</text>
+    <text x="724" y="88" style="fill: var(--ink-soft)">each place becomes</text>
+    <text x="724" y="106" style="fill: var(--ink-soft)">the nearest of the</text>
+    <text x="724" y="124" style="fill: var(--ink-soft)">10 codewords, all</text>
+    <text x="724" y="142" style="fill: var(--ink-soft)">places at once</text>
+    <g style="font: 600 15px 'JetBrains Mono', monospace"><text x="724" y="200">1 3 0 2 3</text></g>
+  </g>
+  <text x="12" y="262" style="font: 12.5px 'Newsreader', serif; fill: var(--ink-soft)">Everything before and after the loop is fixed or nearly so. All the arithmetic, including every carry, happens in the loop.</text>
+</svg>
+</div>
+  <p>The three checkpoints used here, all from the same family, all trained on freshly generated problems (30% built to contain long carry chains):</p>
+  <ul class="points">
+    <li><strong>v22</strong>, the &ldquo;closed answer&rdquo; of Carry the One: 24 rounds, operands up to 20 digits, 30 place slots. Checkpoint from iteration 9,500.</li>
+    <li><strong>v23</strong>: v22 continued with a random number of rounds on every batch (anywhere from as many rounds as the problem has digits up to 24) instead of always 24. Iteration 10,500.</li>
+    <li><strong>v33</strong>: the same idea with up to 80 rounds, 128 place slots, and operands up to 64 digits, continued from v22. Iteration 15,000.</li>
+  </ul>
+  <div class="table-wrap"><table><caption>Exact-match accuracy on the fixed test sets</caption><thead><tr><th>problem length</th><th>v22</th><th>v23</th><th>v33</th></tr></thead><tbody><tr><td>1–10 digits <span style="opacity:.6">(n=1805)</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.8%</span></td></tr><tr><td>11–13 <span style="opacity:.6">(n=600)</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.7%</span></td></tr><tr><td>14–18 <span style="opacity:.6">(n=1000)</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.9%</span></td></tr><tr><td>19–21 <span style="opacity:.6">(n=600)</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.8%</span></td></tr><tr><td>24–26 <span style="opacity:.6">(n=600)</span></td><td>77.3%</td><td>64.5%</td><td><span class="hi">100%</span></td></tr><tr class="split"><td>longest training problem</td><td>20 digits</td><td>20 digits</td><td>64 digits</td></tr><tr><td>rounds of the block</td><td>24</td><td>24</td><td>80</td></tr></tbody></table></div>
+  <p class="fig-cap">Full test sets. v23 and v33 were evaluated on a CPU in 32-bit floats; v22&rsquo;s numbers are from the original GPU run, and re-running it on the CPU gives identical numbers (both logs are in data/logs). v22 and v23 were trained on operands up to 20 digits, so the 24&ndash;26 digit set is four to six digits past their limit; v33 was trained on up to 64, so every length in this table is inside its range.</p>
+
+  <div class="ledger"></div>
+
+  <h2>How the model was opened</h2>
+  <p>Everything below rests on a few small instruments. I added three inert hooks to the model: one records the full state after every round, one lets a function rewrite the state between rounds, and one records the attention weights. Every measurement below was run on a CPU.</p>
+  <ul class="points">
+    <li><strong>Reading the answer early.</strong> The model&rsquo;s own readout is applied to the state after round <em>k</em> for every <em>k</em>: &ldquo;what would the answer be if we stopped here?&rdquo; Round 0 is the state before the first round. v22 was never trained to be read before its last round, so early readouts are rough; they are measurements of the state, not of intent.</li>
+    <li><strong>Linear probes.</strong> A least-squares classifier (ridge, fixed penalty) on a place token&rsquo;s 384 numbers, trained on 70% of 500 problems and scored on the other 30%, split by problem. The 500 problems have 2&ndash;18 digits: a quarter with two operands of the same length, a quarter of different lengths, half with a run of nines. Each result is compared against always guessing the most common answer.</li>
+    <li><strong>Attention maps</strong> from the block, averaged over its six heads and over 24 problems of each kind.</li>
+    <li><strong>State swaps</strong> (activation patching, as in causal tracing): replace one place&rsquo;s state at one round with the state from a second run on slightly different operands, and see what the answer does.</li>
+    <li><strong>Ablations</strong> of the scratch tokens: set a token&rsquo;s starting value to zeros, or to the average of the other three.</li>
+  </ul>
+  <p>Rounds are counted from 1 for the first application of the block. Where a chart says &ldquo;round 0&rdquo; it means the state before any round. The fixed test sets and the length test (last section) use one operand of the stated length and the other of any length up to it. In the attention maps and scratch-token probes, &ldquo;random&rdquo; means two operands of the stated length and &ldquo;nines&rdquo; means a number ending in a run of nines plus a shorter random number. &ldquo;Carry-heavy&rdquo; problems are built the way the training generator builds them, with a long run of nines in one operand and a nonzero units digit in the other.</p>
+
+  <div class="ledger"></div>
+
+  <h2>The time it takes tracks length, not the carry chain</h2>
+  <p>For each problem, find the first round after which the model&rsquo;s answer stops changing. Across random problems that round correlates almost perfectly with the number of digits (0.93 in v22) and weakly with the longest carry chain in the problem (0.33). The chains are short on average (2.5 places in this sample), so the model is mostly not waiting for a long carry to arrive. One reading is that it is waiting to be sure there is none; I did not test that.</p>
+  <div class="table-wrap"><table><caption>When the answer appears</caption><thead><tr><th></th><th>v22</th><th>v23</th><th>v33</th></tr></thead><tbody><tr><td>mean round at which the answer stops changing</td><td>16.3</td><td>11.4</td><td>15.2</td></tr><tr><td>correlation with the number of digits</td><td>0.93</td><td>0.94</td><td>0.75</td></tr><tr><td>correlation with the longest carry chain</td><td>0.33</td><td>0.33</td><td>0.37</td></tr><tr><td>average longest carry chain (places)</td><td>2.5</td><td>2.5</td><td>2.5</td></tr><tr><td>first round at 99%, 1–10 digits</td><td>14</td><td>7</td><td>16</td></tr><tr><td>first round at 99%, 11–13</td><td>17</td><td>10</td><td>23</td></tr><tr><td>first round at 99%, 14–18</td><td>20</td><td>16</td><td>19</td></tr></tbody></table></div>
+  <p class="fig-cap">Round-by-round probe, 150 random problems per length set for v22 and v23, 60 for v33. &ldquo;Stops changing&rdquo; is measured up to the trained round budget.</p>
+  <p>Crafted carry chains show where the time goes. Take a number with a run of nines and add one at the bottom, so a carry must pass through every nine. The places inside the chain are right almost at once (2.6 rounds on average in v22). The place where the carry starts takes 9.0, and the place where it ends takes the longest, 11.8. In all 12 chains one of those two ends was the last place to settle: the end of the chain in 9, the start in the others.</p>
+  <div class="table-wrap"><table><caption>First round the right digit appears and stays, along 12 crafted carry chains</caption><thead><tr><th></th><th>carry starts</th><th>inside</th><th>carry ends</th><th>fit, rounds/place</th></tr></thead><tbody><tr><td>v22</td><td>9.0</td><td>2.6</td><td>11.8</td><td>0.13</td></tr><tr><td>v23</td><td>2.9</td><td>2.1</td><td>4.8</td><td>0.01</td></tr><tr><td>v33</td><td>2.0</td><td>2.0</td><td>7.6</td><td>0.06</td></tr></tbody></table></div>
+  <p class="fig-cap">Chains of 1, 3, 6 and 10 nines starting at place 0, 4 or 9. The last column is a straight-line fit of round against place over all places the carry touches.</p>
+  <div class="note">
+    <div class="note-label">A trap in the obvious test</div>
+    <p>The simplest carry test, 99&hellip;9 + 1, is answered correctly by round 8&ndash;13 in v22 for every length from 4 to 24 digits, which would look like carries that cost nothing. It is not. The training generator produces exactly that pattern (a full run of nines is one of its cases), and a run of nines in the <em>middle</em> of a number is a much slower case, below. I read the 99&hellip;9 + 1 result as a learned fast path for one input, not as evidence about carries in general.</p>
+  </div>
+
+  <div class="ledger"></div>
+
+  <h2>What each place computes, and in what order</h2>
+  <p>A linear probe on a place token at each round shows an order of operations. Before any round the token holds just its two digits; (a + b) mod 10 is not yet readable (63%, against 62% for always guessing the commonest digit). One round later it is (97%). The carry-out is mostly decided by the place&rsquo;s own two digits and is readable almost immediately. Whether a carry <em>arrives</em> takes several rounds, and the final digit, which needs all of it, comes last.</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="What a place token linearly encodes, by round">
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">50%</text>
+<line x1="52" x2="552" y1="207.6" y2="207.6" class="grid"/>
+<text x="44" y="211.6" class="tick" text-anchor="end">60%</text>
+<line x1="52" x2="552" y1="159.2" y2="159.2" class="grid"/>
+<text x="44" y="163.2" class="tick" text-anchor="end">70%</text>
+<line x1="52" x2="552" y1="110.8" y2="110.8" class="grid"/>
+<text x="44" y="114.8" class="tick" text-anchor="end">80%</text>
+<line x1="52" x2="552" y1="62.4" y2="62.4" class="grid"/>
+<text x="44" y="66.4" class="tick" text-anchor="end">90%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">100%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">0</text>
+<text x="135.3" y="274" class="tick" text-anchor="middle">4</text>
+<text x="218.7" y="274" class="tick" text-anchor="middle">8</text>
+<text x="302.0" y="274" class="tick" text-anchor="middle">12</text>
+<text x="385.3" y="274" class="tick" text-anchor="middle">16</text>
+<text x="468.7" y="274" class="tick" text-anchor="middle">20</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">24</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">rounds of the combiner block (0 = before the first)</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">linear probe, held-out accuracy</text>
+<path d="M52.0,194.0 L72.8,26.6 L93.7,18.6 L114.5,14.5 L135.3,14.3 L156.2,14.0 L177.0,14.0 L197.8,14.0 L218.7,14.0 L239.5,14.0 L260.3,14.0 L281.2,14.0 L302.0,14.3 L322.8,14.3 L343.7,14.2 L364.5,14.1 L385.3,14.0 L406.2,14.0 L427.0,14.1 L447.8,14.1 L468.7,14.1 L489.5,14.1 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s3); stroke-width: 2"/>
+<circle cx="52.0" cy="194.0" r="7" class="hit"><title>local digit sum: 0 &#8594; 63%</title></circle>
+<circle cx="72.8" cy="26.6" r="7" class="hit"><title>local digit sum: 1 &#8594; 97%</title></circle>
+<circle cx="93.7" cy="18.6" r="7" class="hit"><title>local digit sum: 2 &#8594; 99%</title></circle>
+<circle cx="114.5" cy="14.5" r="7" class="hit"><title>local digit sum: 3 &#8594; 100%</title></circle>
+<circle cx="135.3" cy="14.3" r="7" class="hit"><title>local digit sum: 4 &#8594; 100%</title></circle>
+<circle cx="156.2" cy="14.0" r="7" class="hit"><title>local digit sum: 5 &#8594; 100%</title></circle>
+<circle cx="177.0" cy="14.0" r="7" class="hit"><title>local digit sum: 6 &#8594; 100%</title></circle>
+<circle cx="197.8" cy="14.0" r="7" class="hit"><title>local digit sum: 7 &#8594; 100%</title></circle>
+<circle cx="218.7" cy="14.0" r="7" class="hit"><title>local digit sum: 8 &#8594; 100%</title></circle>
+<circle cx="239.5" cy="14.0" r="7" class="hit"><title>local digit sum: 9 &#8594; 100%</title></circle>
+<circle cx="260.3" cy="14.0" r="7" class="hit"><title>local digit sum: 10 &#8594; 100%</title></circle>
+<circle cx="281.2" cy="14.0" r="7" class="hit"><title>local digit sum: 11 &#8594; 100%</title></circle>
+<circle cx="302.0" cy="14.3" r="7" class="hit"><title>local digit sum: 12 &#8594; 100%</title></circle>
+<circle cx="322.8" cy="14.3" r="7" class="hit"><title>local digit sum: 13 &#8594; 100%</title></circle>
+<circle cx="343.7" cy="14.2" r="7" class="hit"><title>local digit sum: 14 &#8594; 100%</title></circle>
+<circle cx="364.5" cy="14.1" r="7" class="hit"><title>local digit sum: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="14.0" r="7" class="hit"><title>local digit sum: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>local digit sum: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.1" r="7" class="hit"><title>local digit sum: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.1" r="7" class="hit"><title>local digit sum: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.1" r="7" class="hit"><title>local digit sum: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.1" r="7" class="hit"><title>local digit sum: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>local digit sum: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>local digit sum: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>local digit sum: 24 &#8594; 100%</title></circle>
+<path d="M52.0,58.5 L72.8,22.2 L93.7,18.1 L114.5,15.3 L135.3,14.6 L156.2,14.4 L177.0,14.4 L197.8,14.2 L218.7,14.2 L239.5,14.1 L260.3,14.0 L281.2,14.0 L302.0,14.0 L322.8,14.0 L343.7,14.0 L364.5,14.0 L385.3,14.0 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s2); stroke-width: 2"/>
+<circle cx="52.0" cy="58.5" r="7" class="hit"><title>carry out: 0 &#8594; 91%</title></circle>
+<circle cx="72.8" cy="22.2" r="7" class="hit"><title>carry out: 1 &#8594; 98%</title></circle>
+<circle cx="93.7" cy="18.1" r="7" class="hit"><title>carry out: 2 &#8594; 99%</title></circle>
+<circle cx="114.5" cy="15.3" r="7" class="hit"><title>carry out: 3 &#8594; 100%</title></circle>
+<circle cx="135.3" cy="14.6" r="7" class="hit"><title>carry out: 4 &#8594; 100%</title></circle>
+<circle cx="156.2" cy="14.4" r="7" class="hit"><title>carry out: 5 &#8594; 100%</title></circle>
+<circle cx="177.0" cy="14.4" r="7" class="hit"><title>carry out: 6 &#8594; 100%</title></circle>
+<circle cx="197.8" cy="14.2" r="7" class="hit"><title>carry out: 7 &#8594; 100%</title></circle>
+<circle cx="218.7" cy="14.2" r="7" class="hit"><title>carry out: 8 &#8594; 100%</title></circle>
+<circle cx="239.5" cy="14.1" r="7" class="hit"><title>carry out: 9 &#8594; 100%</title></circle>
+<circle cx="260.3" cy="14.0" r="7" class="hit"><title>carry out: 10 &#8594; 100%</title></circle>
+<circle cx="281.2" cy="14.0" r="7" class="hit"><title>carry out: 11 &#8594; 100%</title></circle>
+<circle cx="302.0" cy="14.0" r="7" class="hit"><title>carry out: 12 &#8594; 100%</title></circle>
+<circle cx="322.8" cy="14.0" r="7" class="hit"><title>carry out: 13 &#8594; 100%</title></circle>
+<circle cx="343.7" cy="14.0" r="7" class="hit"><title>carry out: 14 &#8594; 100%</title></circle>
+<circle cx="364.5" cy="14.0" r="7" class="hit"><title>carry out: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="14.0" r="7" class="hit"><title>carry out: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>carry out: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>carry out: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>carry out: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>carry out: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>carry out: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>carry out: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>carry out: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>carry out: 24 &#8594; 100%</title></circle>
+<path d="M52.0,105.7 L72.8,81.4 L93.7,42.4 L114.5,27.0 L135.3,21.5 L156.2,19.1 L177.0,17.7 L197.8,15.9 L218.7,15.1 L239.5,14.6 L260.3,14.2 L281.2,14.2 L302.0,14.1 L322.8,14.0 L343.7,14.0 L364.5,14.0 L385.3,14.0 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s4); stroke-width: 2"/>
+<circle cx="52.0" cy="105.7" r="7" class="hit"><title>carry in: 0 &#8594; 81%</title></circle>
+<circle cx="72.8" cy="81.4" r="7" class="hit"><title>carry in: 1 &#8594; 86%</title></circle>
+<circle cx="93.7" cy="42.4" r="7" class="hit"><title>carry in: 2 &#8594; 94%</title></circle>
+<circle cx="114.5" cy="27.0" r="7" class="hit"><title>carry in: 3 &#8594; 97%</title></circle>
+<circle cx="135.3" cy="21.5" r="7" class="hit"><title>carry in: 4 &#8594; 98%</title></circle>
+<circle cx="156.2" cy="19.1" r="7" class="hit"><title>carry in: 5 &#8594; 99%</title></circle>
+<circle cx="177.0" cy="17.7" r="7" class="hit"><title>carry in: 6 &#8594; 99%</title></circle>
+<circle cx="197.8" cy="15.9" r="7" class="hit"><title>carry in: 7 &#8594; 100%</title></circle>
+<circle cx="218.7" cy="15.1" r="7" class="hit"><title>carry in: 8 &#8594; 100%</title></circle>
+<circle cx="239.5" cy="14.6" r="7" class="hit"><title>carry in: 9 &#8594; 100%</title></circle>
+<circle cx="260.3" cy="14.2" r="7" class="hit"><title>carry in: 10 &#8594; 100%</title></circle>
+<circle cx="281.2" cy="14.2" r="7" class="hit"><title>carry in: 11 &#8594; 100%</title></circle>
+<circle cx="302.0" cy="14.1" r="7" class="hit"><title>carry in: 12 &#8594; 100%</title></circle>
+<circle cx="322.8" cy="14.0" r="7" class="hit"><title>carry in: 13 &#8594; 100%</title></circle>
+<circle cx="343.7" cy="14.0" r="7" class="hit"><title>carry in: 14 &#8594; 100%</title></circle>
+<circle cx="364.5" cy="14.0" r="7" class="hit"><title>carry in: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="14.0" r="7" class="hit"><title>carry in: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>carry in: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>carry in: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>carry in: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>carry in: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>carry in: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>carry in: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>carry in: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>carry in: 24 &#8594; 100%</title></circle>
+<path d="M52.0,176.4 L72.8,85.8 L93.7,74.2 L114.5,64.1 L135.3,53.5 L156.2,49.5 L177.0,44.8 L197.8,41.2 L218.7,36.2 L239.5,32.1 L260.3,28.5 L281.2,25.4 L302.0,22.4 L322.8,20.5 L343.7,18.1 L364.5,15.8 L385.3,15.2 L406.2,14.1 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s1); stroke-width: 2.6"/>
+<circle cx="52.0" cy="176.4" r="7" class="hit"><title>answer digit: 0 &#8594; 66%</title></circle>
+<circle cx="72.8" cy="85.8" r="7" class="hit"><title>answer digit: 1 &#8594; 85%</title></circle>
+<circle cx="93.7" cy="74.2" r="7" class="hit"><title>answer digit: 2 &#8594; 88%</title></circle>
+<circle cx="114.5" cy="64.1" r="7" class="hit"><title>answer digit: 3 &#8594; 90%</title></circle>
+<circle cx="135.3" cy="53.5" r="7" class="hit"><title>answer digit: 4 &#8594; 92%</title></circle>
+<circle cx="156.2" cy="49.5" r="7" class="hit"><title>answer digit: 5 &#8594; 93%</title></circle>
+<circle cx="177.0" cy="44.8" r="7" class="hit"><title>answer digit: 6 &#8594; 94%</title></circle>
+<circle cx="197.8" cy="41.2" r="7" class="hit"><title>answer digit: 7 &#8594; 94%</title></circle>
+<circle cx="218.7" cy="36.2" r="7" class="hit"><title>answer digit: 8 &#8594; 95%</title></circle>
+<circle cx="239.5" cy="32.1" r="7" class="hit"><title>answer digit: 9 &#8594; 96%</title></circle>
+<circle cx="260.3" cy="28.5" r="7" class="hit"><title>answer digit: 10 &#8594; 97%</title></circle>
+<circle cx="281.2" cy="25.4" r="7" class="hit"><title>answer digit: 11 &#8594; 98%</title></circle>
+<circle cx="302.0" cy="22.4" r="7" class="hit"><title>answer digit: 12 &#8594; 98%</title></circle>
+<circle cx="322.8" cy="20.5" r="7" class="hit"><title>answer digit: 13 &#8594; 99%</title></circle>
+<circle cx="343.7" cy="18.1" r="7" class="hit"><title>answer digit: 14 &#8594; 99%</title></circle>
+<circle cx="364.5" cy="15.8" r="7" class="hit"><title>answer digit: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="15.2" r="7" class="hit"><title>answer digit: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.1" r="7" class="hit"><title>answer digit: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>answer digit: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>answer digit: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>answer digit: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>answer digit: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>answer digit: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>answer digit: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>answer digit: 24 &#8594; 100%</title></circle>
+<line x1="556" x2="570" y1="14.0" y2="14.0" style="stroke: var(--s1); stroke-width: 2.6"/>
+<text x="575" y="18.0" class="direct">answer digit</text>
+<line x1="556" x2="570" y1="28.0" y2="28.0" style="stroke: var(--s4); stroke-width: 2.6"/>
+<text x="575" y="32.0" class="direct">carry in</text>
+<line x1="556" x2="570" y1="42.0" y2="42.0" style="stroke: var(--s2); stroke-width: 2.6"/>
+<text x="575" y="46.0" class="direct">carry out</text>
+<line x1="556" x2="570" y1="56.0" y2="56.0" style="stroke: var(--s3); stroke-width: 2.6"/>
+<text x="575" y="60.0" class="direct">local digit sum</text>
+</svg>
+  <p class="fig-cap">v22. Held-out accuracy of a linear probe on a place token, from 500 problems (the mix described above). Always guessing the commonest answer scores 62% for the digit sum, 78% for carry-out and carry-in, and 65% for the answer digit. By round 8 the digit sum is read correctly for 100% of places and carry-in for 99.8%; the answer digit reaches 98% by round 12 and 99.8% by round 16.</p>
+  <p>The picture sharpens when places are sorted by what the carry does to them. A place inside a chain, or with no carry, is already 85%&ndash;89% readable at round 2. A place where a carry starts is 44% readable at round 2 and 88% at round 8. A place where a carry ends is the slowest: its answer digit is not readable at all at round 0 and only 37% readable at round 4. All four kinds are above 99% by round 16.</p>
+  <div class="fig-title">answer digit, by kind of place</div>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="Answer-digit probe accuracy by kind of place">
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="195.5" y2="195.5" class="grid"/>
+<text x="44" y="199.5" class="tick" text-anchor="end">25%</text>
+<line x1="52" x2="552" y1="135.0" y2="135.0" class="grid"/>
+<text x="44" y="139.0" class="tick" text-anchor="end">50%</text>
+<line x1="52" x2="552" y1="74.5" y2="74.5" class="grid"/>
+<text x="44" y="78.5" class="tick" text-anchor="end">75%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">100%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">0</text>
+<text x="135.3" y="274" class="tick" text-anchor="middle">4</text>
+<text x="218.7" y="274" class="tick" text-anchor="middle">8</text>
+<text x="302.0" y="274" class="tick" text-anchor="middle">12</text>
+<text x="385.3" y="274" class="tick" text-anchor="middle">16</text>
+<text x="468.7" y="274" class="tick" text-anchor="middle">20</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">24</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">rounds of the combiner block</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">answer digit decodable</text>
+<path d="M52.0,229.7 L72.8,200.0 L93.7,150.7 L114.5,121.8 L135.3,84.5 L156.2,69.2 L177.0,58.2 L197.8,47.1 L218.7,42.0 L239.5,36.9 L260.3,32.7 L281.2,30.1 L302.0,22.5 L322.8,18.2 L343.7,16.5 L364.5,15.7 L385.3,15.7 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s3); stroke-width: 2"/>
+<circle cx="52.0" cy="229.7" r="7" class="hit"><title>carry starts here: 0 &#8594; 11%</title></circle>
+<circle cx="72.8" cy="200.0" r="7" class="hit"><title>carry starts here: 1 &#8594; 23%</title></circle>
+<circle cx="93.7" cy="150.7" r="7" class="hit"><title>carry starts here: 2 &#8594; 44%</title></circle>
+<circle cx="114.5" cy="121.8" r="7" class="hit"><title>carry starts here: 3 &#8594; 55%</title></circle>
+<circle cx="135.3" cy="84.5" r="7" class="hit"><title>carry starts here: 4 &#8594; 71%</title></circle>
+<circle cx="156.2" cy="69.2" r="7" class="hit"><title>carry starts here: 5 &#8594; 77%</title></circle>
+<circle cx="177.0" cy="58.2" r="7" class="hit"><title>carry starts here: 6 &#8594; 82%</title></circle>
+<circle cx="197.8" cy="47.1" r="7" class="hit"><title>carry starts here: 7 &#8594; 86%</title></circle>
+<circle cx="218.7" cy="42.0" r="7" class="hit"><title>carry starts here: 8 &#8594; 88%</title></circle>
+<circle cx="239.5" cy="36.9" r="7" class="hit"><title>carry starts here: 9 &#8594; 91%</title></circle>
+<circle cx="260.3" cy="32.7" r="7" class="hit"><title>carry starts here: 10 &#8594; 92%</title></circle>
+<circle cx="281.2" cy="30.1" r="7" class="hit"><title>carry starts here: 11 &#8594; 93%</title></circle>
+<circle cx="302.0" cy="22.5" r="7" class="hit"><title>carry starts here: 12 &#8594; 96%</title></circle>
+<circle cx="322.8" cy="18.2" r="7" class="hit"><title>carry starts here: 13 &#8594; 98%</title></circle>
+<circle cx="343.7" cy="16.5" r="7" class="hit"><title>carry starts here: 14 &#8594; 99%</title></circle>
+<circle cx="364.5" cy="15.7" r="7" class="hit"><title>carry starts here: 15 &#8594; 99%</title></circle>
+<circle cx="385.3" cy="15.7" r="7" class="hit"><title>carry starts here: 16 &#8594; 99%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>carry starts here: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>carry starts here: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>carry starts here: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>carry starts here: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>carry starts here: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>carry starts here: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>carry starts here: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>carry starts here: 24 &#8594; 100%</title></circle>
+<path d="M52.0,149.8 L72.8,43.2 L93.7,39.5 L114.5,37.2 L135.3,36.2 L156.2,36.5 L177.0,34.8 L197.8,33.5 L218.7,32.8 L239.5,30.1 L260.3,27.4 L281.2,24.8 L302.0,23.7 L322.8,21.4 L343.7,20.1 L364.5,17.0 L385.3,15.7 L406.2,14.3 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s4); stroke-width: 2"/>
+<circle cx="52.0" cy="149.8" r="7" class="hit"><title>inside a carry: 0 &#8594; 44%</title></circle>
+<circle cx="72.8" cy="43.2" r="7" class="hit"><title>inside a carry: 1 &#8594; 88%</title></circle>
+<circle cx="93.7" cy="39.5" r="7" class="hit"><title>inside a carry: 2 &#8594; 89%</title></circle>
+<circle cx="114.5" cy="37.2" r="7" class="hit"><title>inside a carry: 3 &#8594; 90%</title></circle>
+<circle cx="135.3" cy="36.2" r="7" class="hit"><title>inside a carry: 4 &#8594; 91%</title></circle>
+<circle cx="156.2" cy="36.5" r="7" class="hit"><title>inside a carry: 5 &#8594; 91%</title></circle>
+<circle cx="177.0" cy="34.8" r="7" class="hit"><title>inside a carry: 6 &#8594; 91%</title></circle>
+<circle cx="197.8" cy="33.5" r="7" class="hit"><title>inside a carry: 7 &#8594; 92%</title></circle>
+<circle cx="218.7" cy="32.8" r="7" class="hit"><title>inside a carry: 8 &#8594; 92%</title></circle>
+<circle cx="239.5" cy="30.1" r="7" class="hit"><title>inside a carry: 9 &#8594; 93%</title></circle>
+<circle cx="260.3" cy="27.4" r="7" class="hit"><title>inside a carry: 10 &#8594; 94%</title></circle>
+<circle cx="281.2" cy="24.8" r="7" class="hit"><title>inside a carry: 11 &#8594; 96%</title></circle>
+<circle cx="302.0" cy="23.7" r="7" class="hit"><title>inside a carry: 12 &#8594; 96%</title></circle>
+<circle cx="322.8" cy="21.4" r="7" class="hit"><title>inside a carry: 13 &#8594; 97%</title></circle>
+<circle cx="343.7" cy="20.1" r="7" class="hit"><title>inside a carry: 14 &#8594; 98%</title></circle>
+<circle cx="364.5" cy="17.0" r="7" class="hit"><title>inside a carry: 15 &#8594; 99%</title></circle>
+<circle cx="385.3" cy="15.7" r="7" class="hit"><title>inside a carry: 16 &#8594; 99%</title></circle>
+<circle cx="406.2" cy="14.3" r="7" class="hit"><title>inside a carry: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>inside a carry: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>inside a carry: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>inside a carry: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>inside a carry: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>inside a carry: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>inside a carry: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>inside a carry: 24 &#8594; 100%</title></circle>
+<path d="M52.0,256.0 L72.8,201.4 L93.7,207.2 L114.5,198.4 L135.3,166.2 L156.2,152.6 L177.0,137.0 L197.8,123.3 L218.7,89.1 L239.5,71.6 L260.3,58.9 L281.2,48.2 L302.0,37.4 L322.8,34.5 L343.7,24.7 L364.5,16.9 L385.3,16.0 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s2); stroke-width: 2"/>
+<circle cx="52.0" cy="256.0" r="7" class="hit"><title>carry ends here: 0 &#8594; 0%</title></circle>
+<circle cx="72.8" cy="201.4" r="7" class="hit"><title>carry ends here: 1 &#8594; 23%</title></circle>
+<circle cx="93.7" cy="207.2" r="7" class="hit"><title>carry ends here: 2 &#8594; 20%</title></circle>
+<circle cx="114.5" cy="198.4" r="7" class="hit"><title>carry ends here: 3 &#8594; 24%</title></circle>
+<circle cx="135.3" cy="166.2" r="7" class="hit"><title>carry ends here: 4 &#8594; 37%</title></circle>
+<circle cx="156.2" cy="152.6" r="7" class="hit"><title>carry ends here: 5 &#8594; 43%</title></circle>
+<circle cx="177.0" cy="137.0" r="7" class="hit"><title>carry ends here: 6 &#8594; 49%</title></circle>
+<circle cx="197.8" cy="123.3" r="7" class="hit"><title>carry ends here: 7 &#8594; 55%</title></circle>
+<circle cx="218.7" cy="89.1" r="7" class="hit"><title>carry ends here: 8 &#8594; 69%</title></circle>
+<circle cx="239.5" cy="71.6" r="7" class="hit"><title>carry ends here: 9 &#8594; 76%</title></circle>
+<circle cx="260.3" cy="58.9" r="7" class="hit"><title>carry ends here: 10 &#8594; 81%</title></circle>
+<circle cx="281.2" cy="48.2" r="7" class="hit"><title>carry ends here: 11 &#8594; 86%</title></circle>
+<circle cx="302.0" cy="37.4" r="7" class="hit"><title>carry ends here: 12 &#8594; 90%</title></circle>
+<circle cx="322.8" cy="34.5" r="7" class="hit"><title>carry ends here: 13 &#8594; 92%</title></circle>
+<circle cx="343.7" cy="24.7" r="7" class="hit"><title>carry ends here: 14 &#8594; 96%</title></circle>
+<circle cx="364.5" cy="16.9" r="7" class="hit"><title>carry ends here: 15 &#8594; 99%</title></circle>
+<circle cx="385.3" cy="16.0" r="7" class="hit"><title>carry ends here: 16 &#8594; 99%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>carry ends here: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>carry ends here: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>carry ends here: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>carry ends here: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>carry ends here: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>carry ends here: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>carry ends here: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>carry ends here: 24 &#8594; 100%</title></circle>
+<path d="M52.0,223.8 L72.8,63.2 L93.7,49.5 L114.5,37.3 L135.3,32.9 L156.2,32.5 L177.0,29.5 L197.8,29.2 L218.7,28.4 L239.5,26.6 L260.3,24.0 L281.2,21.4 L302.0,19.6 L322.8,18.4 L343.7,16.2 L364.5,15.1 L385.3,14.7 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--ctx); stroke-width: 2"/>
+<circle cx="52.0" cy="223.8" r="7" class="hit"><title>no carry: 0 &#8594; 13%</title></circle>
+<circle cx="72.8" cy="63.2" r="7" class="hit"><title>no carry: 1 &#8594; 80%</title></circle>
+<circle cx="93.7" cy="49.5" r="7" class="hit"><title>no carry: 2 &#8594; 85%</title></circle>
+<circle cx="114.5" cy="37.3" r="7" class="hit"><title>no carry: 3 &#8594; 90%</title></circle>
+<circle cx="135.3" cy="32.9" r="7" class="hit"><title>no carry: 4 &#8594; 92%</title></circle>
+<circle cx="156.2" cy="32.5" r="7" class="hit"><title>no carry: 5 &#8594; 92%</title></circle>
+<circle cx="177.0" cy="29.5" r="7" class="hit"><title>no carry: 6 &#8594; 94%</title></circle>
+<circle cx="197.8" cy="29.2" r="7" class="hit"><title>no carry: 7 &#8594; 94%</title></circle>
+<circle cx="218.7" cy="28.4" r="7" class="hit"><title>no carry: 8 &#8594; 94%</title></circle>
+<circle cx="239.5" cy="26.6" r="7" class="hit"><title>no carry: 9 &#8594; 95%</title></circle>
+<circle cx="260.3" cy="24.0" r="7" class="hit"><title>no carry: 10 &#8594; 96%</title></circle>
+<circle cx="281.2" cy="21.4" r="7" class="hit"><title>no carry: 11 &#8594; 97%</title></circle>
+<circle cx="302.0" cy="19.6" r="7" class="hit"><title>no carry: 12 &#8594; 98%</title></circle>
+<circle cx="322.8" cy="18.4" r="7" class="hit"><title>no carry: 13 &#8594; 98%</title></circle>
+<circle cx="343.7" cy="16.2" r="7" class="hit"><title>no carry: 14 &#8594; 99%</title></circle>
+<circle cx="364.5" cy="15.1" r="7" class="hit"><title>no carry: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="14.7" r="7" class="hit"><title>no carry: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>no carry: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>no carry: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>no carry: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>no carry: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>no carry: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>no carry: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>no carry: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>no carry: 24 &#8594; 100%</title></circle>
+<line x1="556" x2="570" y1="14.0" y2="14.0" style="stroke: var(--s2); stroke-width: 2.6"/>
+<text x="575" y="18.0" class="direct">carry ends here</text>
+<line x1="556" x2="570" y1="28.0" y2="28.0" style="stroke: var(--s3); stroke-width: 2.6"/>
+<text x="575" y="32.0" class="direct">carry starts here</text>
+<line x1="556" x2="570" y1="42.0" y2="42.0" style="stroke: var(--s4); stroke-width: 2.6"/>
+<text x="575" y="46.0" class="direct">inside a carry</text>
+<line x1="556" x2="570" y1="56.0" y2="56.0" style="stroke: var(--ctx); stroke-width: 2.6"/>
+<text x="575" y="60.0" class="direct">no carry</text>
+</svg>
+  <p>The carry-in probe is more telling. At the end of a chain the true carry-in is always 1, yet at round 1 the probe says 0 for almost every place (4% right, against 78% for guessing). Those places are not uncertain; their state confidently says &ldquo;no carry&rdquo;, and it takes the carry arriving from below to correct it.</p>
+  <div class="fig-title">carry-in, by kind of place</div>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="Carry-in probe accuracy by kind of place">
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="195.5" y2="195.5" class="grid"/>
+<text x="44" y="199.5" class="tick" text-anchor="end">25%</text>
+<line x1="52" x2="552" y1="135.0" y2="135.0" class="grid"/>
+<text x="44" y="139.0" class="tick" text-anchor="end">50%</text>
+<line x1="52" x2="552" y1="74.5" y2="74.5" class="grid"/>
+<text x="44" y="78.5" class="tick" text-anchor="end">75%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">100%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">0</text>
+<text x="135.3" y="274" class="tick" text-anchor="middle">4</text>
+<text x="218.7" y="274" class="tick" text-anchor="middle">8</text>
+<text x="302.0" y="274" class="tick" text-anchor="middle">12</text>
+<text x="385.3" y="274" class="tick" text-anchor="middle">16</text>
+<text x="468.7" y="274" class="tick" text-anchor="middle">20</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">24</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">rounds of the combiner block</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">carry-in decodable</text>
+<path d="M52.0,182.1 L72.8,183.8 L93.7,60.7 L114.5,37.8 L135.3,28.4 L156.2,25.9 L177.0,22.5 L197.8,18.2 L218.7,16.5 L239.5,14.8 L260.3,14.8 L281.2,14.8 L302.0,14.0 L322.8,14.0 L343.7,14.0 L364.5,14.0 L385.3,14.0 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s3); stroke-width: 2"/>
+<circle cx="52.0" cy="182.1" r="7" class="hit"><title>carry starts here: 0 &#8594; 31%</title></circle>
+<circle cx="72.8" cy="183.8" r="7" class="hit"><title>carry starts here: 1 &#8594; 30%</title></circle>
+<circle cx="93.7" cy="60.7" r="7" class="hit"><title>carry starts here: 2 &#8594; 81%</title></circle>
+<circle cx="114.5" cy="37.8" r="7" class="hit"><title>carry starts here: 3 &#8594; 90%</title></circle>
+<circle cx="135.3" cy="28.4" r="7" class="hit"><title>carry starts here: 4 &#8594; 94%</title></circle>
+<circle cx="156.2" cy="25.9" r="7" class="hit"><title>carry starts here: 5 &#8594; 95%</title></circle>
+<circle cx="177.0" cy="22.5" r="7" class="hit"><title>carry starts here: 6 &#8594; 96%</title></circle>
+<circle cx="197.8" cy="18.2" r="7" class="hit"><title>carry starts here: 7 &#8594; 98%</title></circle>
+<circle cx="218.7" cy="16.5" r="7" class="hit"><title>carry starts here: 8 &#8594; 99%</title></circle>
+<circle cx="239.5" cy="14.8" r="7" class="hit"><title>carry starts here: 9 &#8594; 100%</title></circle>
+<circle cx="260.3" cy="14.8" r="7" class="hit"><title>carry starts here: 10 &#8594; 100%</title></circle>
+<circle cx="281.2" cy="14.8" r="7" class="hit"><title>carry starts here: 11 &#8594; 100%</title></circle>
+<circle cx="302.0" cy="14.0" r="7" class="hit"><title>carry starts here: 12 &#8594; 100%</title></circle>
+<circle cx="322.8" cy="14.0" r="7" class="hit"><title>carry starts here: 13 &#8594; 100%</title></circle>
+<circle cx="343.7" cy="14.0" r="7" class="hit"><title>carry starts here: 14 &#8594; 100%</title></circle>
+<circle cx="364.5" cy="14.0" r="7" class="hit"><title>carry starts here: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="14.0" r="7" class="hit"><title>carry starts here: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>carry starts here: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>carry starts here: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>carry starts here: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>carry starts here: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>carry starts here: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>carry starts here: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>carry starts here: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>carry starts here: 24 &#8594; 100%</title></circle>
+<path d="M52.0,123.2 L72.8,45.3 L93.7,30.8 L114.5,19.0 L135.3,14.3 L156.2,14.0 L177.0,14.0 L197.8,14.0 L218.7,14.0 L239.5,14.0 L260.3,14.0 L281.2,14.0 L302.0,14.0 L322.8,14.0 L343.7,14.0 L364.5,14.0 L385.3,14.0 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s4); stroke-width: 2"/>
+<circle cx="52.0" cy="123.2" r="7" class="hit"><title>inside a carry: 0 &#8594; 55%</title></circle>
+<circle cx="72.8" cy="45.3" r="7" class="hit"><title>inside a carry: 1 &#8594; 87%</title></circle>
+<circle cx="93.7" cy="30.8" r="7" class="hit"><title>inside a carry: 2 &#8594; 93%</title></circle>
+<circle cx="114.5" cy="19.0" r="7" class="hit"><title>inside a carry: 3 &#8594; 98%</title></circle>
+<circle cx="135.3" cy="14.3" r="7" class="hit"><title>inside a carry: 4 &#8594; 100%</title></circle>
+<circle cx="156.2" cy="14.0" r="7" class="hit"><title>inside a carry: 5 &#8594; 100%</title></circle>
+<circle cx="177.0" cy="14.0" r="7" class="hit"><title>inside a carry: 6 &#8594; 100%</title></circle>
+<circle cx="197.8" cy="14.0" r="7" class="hit"><title>inside a carry: 7 &#8594; 100%</title></circle>
+<circle cx="218.7" cy="14.0" r="7" class="hit"><title>inside a carry: 8 &#8594; 100%</title></circle>
+<circle cx="239.5" cy="14.0" r="7" class="hit"><title>inside a carry: 9 &#8594; 100%</title></circle>
+<circle cx="260.3" cy="14.0" r="7" class="hit"><title>inside a carry: 10 &#8594; 100%</title></circle>
+<circle cx="281.2" cy="14.0" r="7" class="hit"><title>inside a carry: 11 &#8594; 100%</title></circle>
+<circle cx="302.0" cy="14.0" r="7" class="hit"><title>inside a carry: 12 &#8594; 100%</title></circle>
+<circle cx="322.8" cy="14.0" r="7" class="hit"><title>inside a carry: 13 &#8594; 100%</title></circle>
+<circle cx="343.7" cy="14.0" r="7" class="hit"><title>inside a carry: 14 &#8594; 100%</title></circle>
+<circle cx="364.5" cy="14.0" r="7" class="hit"><title>inside a carry: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="14.0" r="7" class="hit"><title>inside a carry: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>inside a carry: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>inside a carry: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>inside a carry: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>inside a carry: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>inside a carry: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>inside a carry: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>inside a carry: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>inside a carry: 24 &#8594; 100%</title></circle>
+<path d="M52.0,183.8 L72.8,247.2 L93.7,84.3 L114.5,53.0 L135.3,38.4 L156.2,29.6 L177.0,23.8 L197.8,19.9 L218.7,16.0 L239.5,15.0 L260.3,14.0 L281.2,14.0 L302.0,14.0 L322.8,14.0 L343.7,14.0 L364.5,14.0 L385.3,14.0 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--s2); stroke-width: 2"/>
+<circle cx="52.0" cy="183.8" r="7" class="hit"><title>carry ends here: 0 &#8594; 30%</title></circle>
+<circle cx="72.8" cy="247.2" r="7" class="hit"><title>carry ends here: 1 &#8594; 4%</title></circle>
+<circle cx="93.7" cy="84.3" r="7" class="hit"><title>carry ends here: 2 &#8594; 71%</title></circle>
+<circle cx="114.5" cy="53.0" r="7" class="hit"><title>carry ends here: 3 &#8594; 84%</title></circle>
+<circle cx="135.3" cy="38.4" r="7" class="hit"><title>carry ends here: 4 &#8594; 90%</title></circle>
+<circle cx="156.2" cy="29.6" r="7" class="hit"><title>carry ends here: 5 &#8594; 94%</title></circle>
+<circle cx="177.0" cy="23.8" r="7" class="hit"><title>carry ends here: 6 &#8594; 96%</title></circle>
+<circle cx="197.8" cy="19.9" r="7" class="hit"><title>carry ends here: 7 &#8594; 98%</title></circle>
+<circle cx="218.7" cy="16.0" r="7" class="hit"><title>carry ends here: 8 &#8594; 99%</title></circle>
+<circle cx="239.5" cy="15.0" r="7" class="hit"><title>carry ends here: 9 &#8594; 100%</title></circle>
+<circle cx="260.3" cy="14.0" r="7" class="hit"><title>carry ends here: 10 &#8594; 100%</title></circle>
+<circle cx="281.2" cy="14.0" r="7" class="hit"><title>carry ends here: 11 &#8594; 100%</title></circle>
+<circle cx="302.0" cy="14.0" r="7" class="hit"><title>carry ends here: 12 &#8594; 100%</title></circle>
+<circle cx="322.8" cy="14.0" r="7" class="hit"><title>carry ends here: 13 &#8594; 100%</title></circle>
+<circle cx="343.7" cy="14.0" r="7" class="hit"><title>carry ends here: 14 &#8594; 100%</title></circle>
+<circle cx="364.5" cy="14.0" r="7" class="hit"><title>carry ends here: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="14.0" r="7" class="hit"><title>carry ends here: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>carry ends here: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>carry ends here: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>carry ends here: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>carry ends here: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>carry ends here: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>carry ends here: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>carry ends here: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>carry ends here: 24 &#8594; 100%</title></circle>
+<path d="M52.0,58.0 L72.8,35.5 L93.7,38.8 L114.5,22.9 L135.3,20.3 L156.2,18.4 L177.0,17.7 L197.8,15.5 L218.7,15.1 L239.5,14.7 L260.3,14.4 L281.2,14.4 L302.0,14.4 L322.8,14.0 L343.7,14.0 L364.5,14.0 L385.3,14.0 L406.2,14.0 L427.0,14.0 L447.8,14.0 L468.7,14.0 L489.5,14.0 L510.3,14.0 L531.2,14.0 L552.0,14.0" class="series" style="stroke: var(--ctx); stroke-width: 2"/>
+<circle cx="52.0" cy="58.0" r="7" class="hit"><title>no carry: 0 &#8594; 82%</title></circle>
+<circle cx="72.8" cy="35.5" r="7" class="hit"><title>no carry: 1 &#8594; 91%</title></circle>
+<circle cx="93.7" cy="38.8" r="7" class="hit"><title>no carry: 2 &#8594; 90%</title></circle>
+<circle cx="114.5" cy="22.9" r="7" class="hit"><title>no carry: 3 &#8594; 96%</title></circle>
+<circle cx="135.3" cy="20.3" r="7" class="hit"><title>no carry: 4 &#8594; 97%</title></circle>
+<circle cx="156.2" cy="18.4" r="7" class="hit"><title>no carry: 5 &#8594; 98%</title></circle>
+<circle cx="177.0" cy="17.7" r="7" class="hit"><title>no carry: 6 &#8594; 98%</title></circle>
+<circle cx="197.8" cy="15.5" r="7" class="hit"><title>no carry: 7 &#8594; 99%</title></circle>
+<circle cx="218.7" cy="15.1" r="7" class="hit"><title>no carry: 8 &#8594; 100%</title></circle>
+<circle cx="239.5" cy="14.7" r="7" class="hit"><title>no carry: 9 &#8594; 100%</title></circle>
+<circle cx="260.3" cy="14.4" r="7" class="hit"><title>no carry: 10 &#8594; 100%</title></circle>
+<circle cx="281.2" cy="14.4" r="7" class="hit"><title>no carry: 11 &#8594; 100%</title></circle>
+<circle cx="302.0" cy="14.4" r="7" class="hit"><title>no carry: 12 &#8594; 100%</title></circle>
+<circle cx="322.8" cy="14.0" r="7" class="hit"><title>no carry: 13 &#8594; 100%</title></circle>
+<circle cx="343.7" cy="14.0" r="7" class="hit"><title>no carry: 14 &#8594; 100%</title></circle>
+<circle cx="364.5" cy="14.0" r="7" class="hit"><title>no carry: 15 &#8594; 100%</title></circle>
+<circle cx="385.3" cy="14.0" r="7" class="hit"><title>no carry: 16 &#8594; 100%</title></circle>
+<circle cx="406.2" cy="14.0" r="7" class="hit"><title>no carry: 17 &#8594; 100%</title></circle>
+<circle cx="427.0" cy="14.0" r="7" class="hit"><title>no carry: 18 &#8594; 100%</title></circle>
+<circle cx="447.8" cy="14.0" r="7" class="hit"><title>no carry: 19 &#8594; 100%</title></circle>
+<circle cx="468.7" cy="14.0" r="7" class="hit"><title>no carry: 20 &#8594; 100%</title></circle>
+<circle cx="489.5" cy="14.0" r="7" class="hit"><title>no carry: 21 &#8594; 100%</title></circle>
+<circle cx="510.3" cy="14.0" r="7" class="hit"><title>no carry: 22 &#8594; 100%</title></circle>
+<circle cx="531.2" cy="14.0" r="7" class="hit"><title>no carry: 23 &#8594; 100%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>no carry: 24 &#8594; 100%</title></circle>
+<line x1="556" x2="570" y1="14.0" y2="14.0" style="stroke: var(--s2); stroke-width: 2.6"/>
+<text x="575" y="18.0" class="direct">carry ends here</text>
+<line x1="556" x2="570" y1="28.0" y2="28.0" style="stroke: var(--s3); stroke-width: 2.6"/>
+<text x="575" y="32.0" class="direct">carry starts here</text>
+<line x1="556" x2="570" y1="42.0" y2="42.0" style="stroke: var(--s4); stroke-width: 2.6"/>
+<text x="575" y="46.0" class="direct">inside a carry</text>
+<line x1="556" x2="570" y1="56.0" y2="56.0" style="stroke: var(--ctx); stroke-width: 2.6"/>
+<text x="575" y="60.0" class="direct">no carry</text>
+</svg>
+  <p class="fig-cap">v22. &ldquo;No carry&rdquo; and &ldquo;inside a carry&rdquo; places are right early; the two ends of a chain are not. Places beyond the length of the number (not drawn) are right from round 0.</p>
+
+  <div class="ledger"></div>
+
+  <h2>The carry moves one place at a time</h2>
+  <p>Attention says how. At round 7 the strongest attention in the block goes to the next place <em>down</em>, in all eight kinds of problem tried (random and runs-of-nines, 6 to 20 digits). In a 16-digit random problem 19% of a place&rsquo;s attention goes there, against at most 2% for any other single place within four. That is the place its carry-in comes from, and the direction is one-way: per place, 27% of attention goes to lower places and 7% to higher ones.</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="Attention by relative place in the combiner block">
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="198.4" y2="198.4" class="grid"/>
+<text x="44" y="202.4" class="tick" text-anchor="end">5%</text>
+<line x1="52" x2="552" y1="140.8" y2="140.8" class="grid"/>
+<text x="44" y="144.8" class="tick" text-anchor="end">10%</text>
+<line x1="52" x2="552" y1="83.1" y2="83.1" class="grid"/>
+<text x="44" y="87.1" class="tick" text-anchor="end">15%</text>
+<line x1="52" x2="552" y1="25.5" y2="25.5" class="grid"/>
+<text x="44" y="29.5" class="tick" text-anchor="end">20%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">-8</text>
+<text x="114.5" y="274" class="tick" text-anchor="middle">-6</text>
+<text x="177.0" y="274" class="tick" text-anchor="middle">-4</text>
+<text x="239.5" y="274" class="tick" text-anchor="middle">-2</text>
+<text x="302.0" y="274" class="tick" text-anchor="middle">0</text>
+<text x="364.5" y="274" class="tick" text-anchor="middle">+2</text>
+<text x="427.0" y="274" class="tick" text-anchor="middle">+4</text>
+<text x="489.5" y="274" class="tick" text-anchor="middle">+6</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">+8</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">place of the attended token relative to the attending token (−1 = the next place down)</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">share of attention</text>
+<line x1="302.0" x2="302.0" y1="14" y2="256" class="ref"/>
+<path d="M52.0,255.3 L83.2,255.7 L114.5,255.9 L145.8,255.6 L177.0,252.6 L208.2,240.3 L239.5,238.6 L270.8,34.5 L302.0,231.3 L333.2,245.8 L364.5,245.5 L395.8,255.4 L427.0,254.9 L458.2,255.0 L489.5,255.7 L520.8,256.0 L552.0,256.0" class="series" style="stroke: var(--s1); stroke-width: 2"/>
+<circle cx="52.0" cy="255.3" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="83.2" cy="255.7" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="114.5" cy="255.9" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="145.8" cy="255.6" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="177.0" cy="252.6" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="208.2" cy="240.3" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="239.5" cy="238.6" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="270.8" cy="34.5" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="302.0" cy="231.3" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="333.2" cy="245.8" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="364.5" cy="245.5" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="395.8" cy="255.4" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="427.0" cy="254.9" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="458.2" cy="255.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="489.5" cy="255.7" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="520.8" cy="256.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="552.0" cy="256.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="52.0" cy="255.3" r="7" class="hit"><title>random 16-digit, round 7: -8 &#8594; 0%</title></circle>
+<circle cx="83.2" cy="255.7" r="7" class="hit"><title>random 16-digit, round 7: -7 &#8594; 0%</title></circle>
+<circle cx="114.5" cy="255.9" r="7" class="hit"><title>random 16-digit, round 7: -6 &#8594; 0%</title></circle>
+<circle cx="145.8" cy="255.6" r="7" class="hit"><title>random 16-digit, round 7: -5 &#8594; 0%</title></circle>
+<circle cx="177.0" cy="252.6" r="7" class="hit"><title>random 16-digit, round 7: -4 &#8594; 0%</title></circle>
+<circle cx="208.2" cy="240.3" r="7" class="hit"><title>random 16-digit, round 7: -3 &#8594; 1%</title></circle>
+<circle cx="239.5" cy="238.6" r="7" class="hit"><title>random 16-digit, round 7: -2 &#8594; 2%</title></circle>
+<circle cx="270.8" cy="34.5" r="7" class="hit"><title>random 16-digit, round 7: -1 &#8594; 19%</title></circle>
+<circle cx="302.0" cy="231.3" r="7" class="hit"><title>random 16-digit, round 7: 0 &#8594; 2%</title></circle>
+<circle cx="333.2" cy="245.8" r="7" class="hit"><title>random 16-digit, round 7: +1 &#8594; 1%</title></circle>
+<circle cx="364.5" cy="245.5" r="7" class="hit"><title>random 16-digit, round 7: +2 &#8594; 1%</title></circle>
+<circle cx="395.8" cy="255.4" r="7" class="hit"><title>random 16-digit, round 7: +3 &#8594; 0%</title></circle>
+<circle cx="427.0" cy="254.9" r="7" class="hit"><title>random 16-digit, round 7: +4 &#8594; 0%</title></circle>
+<circle cx="458.2" cy="255.0" r="7" class="hit"><title>random 16-digit, round 7: +5 &#8594; 0%</title></circle>
+<circle cx="489.5" cy="255.7" r="7" class="hit"><title>random 16-digit, round 7: +6 &#8594; 0%</title></circle>
+<circle cx="520.8" cy="256.0" r="7" class="hit"><title>random 16-digit, round 7: +7 &#8594; 0%</title></circle>
+<circle cx="552.0" cy="256.0" r="7" class="hit"><title>random 16-digit, round 7: +8 &#8594; 0%</title></circle>
+<path d="M52.0,254.1 L83.2,255.8 L114.5,255.9 L145.8,255.8 L177.0,252.3 L208.2,231.5 L239.5,208.4 L270.8,38.2 L302.0,228.2 L333.2,241.2 L364.5,244.3 L395.8,255.3 L427.0,255.4 L458.2,255.2 L489.5,255.9 L520.8,255.9 L552.0,256.0" class="series" style="stroke: var(--s2); stroke-width: 2"/>
+<circle cx="52.0" cy="254.1" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="83.2" cy="255.8" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="114.5" cy="255.9" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="145.8" cy="255.8" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="177.0" cy="252.3" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="208.2" cy="231.5" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="239.5" cy="208.4" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="270.8" cy="38.2" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="302.0" cy="228.2" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="333.2" cy="241.2" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="364.5" cy="244.3" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="395.8" cy="255.3" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="427.0" cy="255.4" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="458.2" cy="255.2" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="489.5" cy="255.9" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="520.8" cy="255.9" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="552.0" cy="256.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="52.0" cy="254.1" r="7" class="hit"><title>run of nines, 16 digits, round 7: -8 &#8594; 0%</title></circle>
+<circle cx="83.2" cy="255.8" r="7" class="hit"><title>run of nines, 16 digits, round 7: -7 &#8594; 0%</title></circle>
+<circle cx="114.5" cy="255.9" r="7" class="hit"><title>run of nines, 16 digits, round 7: -6 &#8594; 0%</title></circle>
+<circle cx="145.8" cy="255.8" r="7" class="hit"><title>run of nines, 16 digits, round 7: -5 &#8594; 0%</title></circle>
+<circle cx="177.0" cy="252.3" r="7" class="hit"><title>run of nines, 16 digits, round 7: -4 &#8594; 0%</title></circle>
+<circle cx="208.2" cy="231.5" r="7" class="hit"><title>run of nines, 16 digits, round 7: -3 &#8594; 2%</title></circle>
+<circle cx="239.5" cy="208.4" r="7" class="hit"><title>run of nines, 16 digits, round 7: -2 &#8594; 4%</title></circle>
+<circle cx="270.8" cy="38.2" r="7" class="hit"><title>run of nines, 16 digits, round 7: -1 &#8594; 19%</title></circle>
+<circle cx="302.0" cy="228.2" r="7" class="hit"><title>run of nines, 16 digits, round 7: 0 &#8594; 2%</title></circle>
+<circle cx="333.2" cy="241.2" r="7" class="hit"><title>run of nines, 16 digits, round 7: +1 &#8594; 1%</title></circle>
+<circle cx="364.5" cy="244.3" r="7" class="hit"><title>run of nines, 16 digits, round 7: +2 &#8594; 1%</title></circle>
+<circle cx="395.8" cy="255.3" r="7" class="hit"><title>run of nines, 16 digits, round 7: +3 &#8594; 0%</title></circle>
+<circle cx="427.0" cy="255.4" r="7" class="hit"><title>run of nines, 16 digits, round 7: +4 &#8594; 0%</title></circle>
+<circle cx="458.2" cy="255.2" r="7" class="hit"><title>run of nines, 16 digits, round 7: +5 &#8594; 0%</title></circle>
+<circle cx="489.5" cy="255.9" r="7" class="hit"><title>run of nines, 16 digits, round 7: +6 &#8594; 0%</title></circle>
+<circle cx="520.8" cy="255.9" r="7" class="hit"><title>run of nines, 16 digits, round 7: +7 &#8594; 0%</title></circle>
+<circle cx="552.0" cy="256.0" r="7" class="hit"><title>run of nines, 16 digits, round 7: +8 &#8594; 0%</title></circle>
+<path d="M52.0,244.4 L83.2,254.6 L114.5,254.1 L145.8,254.7 L177.0,254.8 L208.2,252.1 L239.5,219.2 L270.8,95.3 L302.0,170.4 L333.2,236.3 L364.5,249.8 L395.8,254.5 L427.0,255.7 L458.2,255.5 L489.5,255.1 L520.8,255.5 L552.0,255.7" class="series" style="stroke: var(--s2); stroke-width: 2; stroke-dasharray: 6 4"/>
+<circle cx="52.0" cy="244.4" r="7" class="hit"><title>run of nines, 16 digits, round 17: -8 &#8594; 1%</title></circle>
+<circle cx="83.2" cy="254.6" r="7" class="hit"><title>run of nines, 16 digits, round 17: -7 &#8594; 0%</title></circle>
+<circle cx="114.5" cy="254.1" r="7" class="hit"><title>run of nines, 16 digits, round 17: -6 &#8594; 0%</title></circle>
+<circle cx="145.8" cy="254.7" r="7" class="hit"><title>run of nines, 16 digits, round 17: -5 &#8594; 0%</title></circle>
+<circle cx="177.0" cy="254.8" r="7" class="hit"><title>run of nines, 16 digits, round 17: -4 &#8594; 0%</title></circle>
+<circle cx="208.2" cy="252.1" r="7" class="hit"><title>run of nines, 16 digits, round 17: -3 &#8594; 0%</title></circle>
+<circle cx="239.5" cy="219.2" r="7" class="hit"><title>run of nines, 16 digits, round 17: -2 &#8594; 3%</title></circle>
+<circle cx="270.8" cy="95.3" r="7" class="hit"><title>run of nines, 16 digits, round 17: -1 &#8594; 14%</title></circle>
+<circle cx="302.0" cy="170.4" r="7" class="hit"><title>run of nines, 16 digits, round 17: 0 &#8594; 7%</title></circle>
+<circle cx="333.2" cy="236.3" r="7" class="hit"><title>run of nines, 16 digits, round 17: +1 &#8594; 2%</title></circle>
+<circle cx="364.5" cy="249.8" r="7" class="hit"><title>run of nines, 16 digits, round 17: +2 &#8594; 1%</title></circle>
+<circle cx="395.8" cy="254.5" r="7" class="hit"><title>run of nines, 16 digits, round 17: +3 &#8594; 0%</title></circle>
+<circle cx="427.0" cy="255.7" r="7" class="hit"><title>run of nines, 16 digits, round 17: +4 &#8594; 0%</title></circle>
+<circle cx="458.2" cy="255.5" r="7" class="hit"><title>run of nines, 16 digits, round 17: +5 &#8594; 0%</title></circle>
+<circle cx="489.5" cy="255.1" r="7" class="hit"><title>run of nines, 16 digits, round 17: +6 &#8594; 0%</title></circle>
+<circle cx="520.8" cy="255.5" r="7" class="hit"><title>run of nines, 16 digits, round 17: +7 &#8594; 0%</title></circle>
+<circle cx="552.0" cy="255.7" r="7" class="hit"><title>run of nines, 16 digits, round 17: +8 &#8594; 0%</title></circle>
+<line x1="556" x2="570" y1="226.0" y2="226.0" style="stroke: var(--s2); stroke-width: 2.6; stroke-dasharray: 6 4"/>
+<text x="575" y="230.0" class="direct">nines, round 17</text>
+<line x1="556" x2="570" y1="240.0" y2="240.0" style="stroke: var(--s2); stroke-width: 2.6"/>
+<text x="575" y="244.0" class="direct">nines, round 7</text>
+<line x1="556" x2="570" y1="254.0" y2="254.0" style="stroke: var(--s1); stroke-width: 2.6"/>
+<text x="575" y="258.0" class="direct">random, round 7</text>
+</svg>
+  <p class="fig-cap">v22. Share of a place token&rsquo;s attention by how far, in places, the attended token is from it, averaged over six heads and 24 problems, restricted to places inside the number. On a run of nines the band widens to the next two or three places down while the carry is in transit (round 7), then narrows again (round 17).</p>
+  <p>The four scratch tokens behave differently. In round 1 place tokens look mainly at themselves (45% of their attention). In rounds 2 to 4 they send 41%, 45% and 43% of it to the scratch tokens (16-digit problems), and the scratch tokens send 66% of theirs back to the place tokens in round 2. By round 11 the place-to-scratch share has fallen to 11%. On long inputs it rises again late: to 25% on 20-digit runs of nines at round 21, after dipping to 5%.</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="Share of place-token attention that goes to the four scratch tokens, by round">
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="207.6" y2="207.6" class="grid"/>
+<text x="44" y="211.6" class="tick" text-anchor="end">10%</text>
+<line x1="52" x2="552" y1="159.2" y2="159.2" class="grid"/>
+<text x="44" y="163.2" class="tick" text-anchor="end">20%</text>
+<line x1="52" x2="552" y1="110.8" y2="110.8" class="grid"/>
+<text x="44" y="114.8" class="tick" text-anchor="end">30%</text>
+<line x1="52" x2="552" y1="62.4" y2="62.4" class="grid"/>
+<text x="44" y="66.4" class="tick" text-anchor="end">40%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">50%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">1</text>
+<text x="117.2" y="274" class="tick" text-anchor="middle">4</text>
+<text x="204.2" y="274" class="tick" text-anchor="middle">8</text>
+<text x="291.1" y="274" class="tick" text-anchor="middle">12</text>
+<text x="378.1" y="274" class="tick" text-anchor="middle">16</text>
+<text x="465.0" y="274" class="tick" text-anchor="middle">20</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">24</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">round (1 = the first application of the block)</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">share of a place token’s attention</text>
+<path d="M52.0,195.1 L73.7,96.0 L95.5,75.2 L117.2,97.5 L139.0,103.7 L160.7,154.8 L182.4,177.6 L204.2,187.3 L225.9,190.8 L247.7,192.9 L269.4,188.7 L291.1,183.9 L312.9,175.2 L334.6,174.6 L356.3,181.1 L378.1,187.5 L399.8,190.3 L421.6,192.9 L443.3,196.4 L465.0,199.7 L486.8,202.4 L508.5,204.4 L530.3,205.7 L552.0,206.5" class="series" style="stroke: var(--ctx); stroke-width: 2"/>
+<circle cx="52.0" cy="195.1" r="7" class="hit"><title>random 6-digit: 1 &#8594; 13%</title></circle>
+<circle cx="73.7" cy="96.0" r="7" class="hit"><title>random 6-digit: 2 &#8594; 33%</title></circle>
+<circle cx="95.5" cy="75.2" r="7" class="hit"><title>random 6-digit: 3 &#8594; 37%</title></circle>
+<circle cx="117.2" cy="97.5" r="7" class="hit"><title>random 6-digit: 4 &#8594; 33%</title></circle>
+<circle cx="139.0" cy="103.7" r="7" class="hit"><title>random 6-digit: 5 &#8594; 31%</title></circle>
+<circle cx="160.7" cy="154.8" r="7" class="hit"><title>random 6-digit: 6 &#8594; 21%</title></circle>
+<circle cx="182.4" cy="177.6" r="7" class="hit"><title>random 6-digit: 7 &#8594; 16%</title></circle>
+<circle cx="204.2" cy="187.3" r="7" class="hit"><title>random 6-digit: 8 &#8594; 14%</title></circle>
+<circle cx="225.9" cy="190.8" r="7" class="hit"><title>random 6-digit: 9 &#8594; 13%</title></circle>
+<circle cx="247.7" cy="192.9" r="7" class="hit"><title>random 6-digit: 10 &#8594; 13%</title></circle>
+<circle cx="269.4" cy="188.7" r="7" class="hit"><title>random 6-digit: 11 &#8594; 14%</title></circle>
+<circle cx="291.1" cy="183.9" r="7" class="hit"><title>random 6-digit: 12 &#8594; 15%</title></circle>
+<circle cx="312.9" cy="175.2" r="7" class="hit"><title>random 6-digit: 13 &#8594; 17%</title></circle>
+<circle cx="334.6" cy="174.6" r="7" class="hit"><title>random 6-digit: 14 &#8594; 17%</title></circle>
+<circle cx="356.3" cy="181.1" r="7" class="hit"><title>random 6-digit: 15 &#8594; 15%</title></circle>
+<circle cx="378.1" cy="187.5" r="7" class="hit"><title>random 6-digit: 16 &#8594; 14%</title></circle>
+<circle cx="399.8" cy="190.3" r="7" class="hit"><title>random 6-digit: 17 &#8594; 14%</title></circle>
+<circle cx="421.6" cy="192.9" r="7" class="hit"><title>random 6-digit: 18 &#8594; 13%</title></circle>
+<circle cx="443.3" cy="196.4" r="7" class="hit"><title>random 6-digit: 19 &#8594; 12%</title></circle>
+<circle cx="465.0" cy="199.7" r="7" class="hit"><title>random 6-digit: 20 &#8594; 12%</title></circle>
+<circle cx="486.8" cy="202.4" r="7" class="hit"><title>random 6-digit: 21 &#8594; 11%</title></circle>
+<circle cx="508.5" cy="204.4" r="7" class="hit"><title>random 6-digit: 22 &#8594; 11%</title></circle>
+<circle cx="530.3" cy="205.7" r="7" class="hit"><title>random 6-digit: 23 &#8594; 10%</title></circle>
+<circle cx="552.0" cy="206.5" r="7" class="hit"><title>random 6-digit: 24 &#8594; 10%</title></circle>
+<path d="M52.0,190.8 L73.7,58.5 L95.5,37.1 L117.2,50.2 L139.0,60.9 L160.7,76.1 L182.4,98.7 L204.2,110.8 L225.9,147.8 L247.7,169.6 L269.4,200.4 L291.1,187.6 L312.9,179.1 L334.6,189.4 L356.3,185.6 L378.1,158.2 L399.8,144.6 L421.6,134.9 L443.3,144.5 L465.0,152.1 L486.8,157.3 L508.5,167.8 L530.3,179.7 L552.0,188.8" class="series" style="stroke: var(--s1); stroke-width: 2"/>
+<circle cx="52.0" cy="190.8" r="7" class="hit"><title>random 16-digit: 1 &#8594; 13%</title></circle>
+<circle cx="73.7" cy="58.5" r="7" class="hit"><title>random 16-digit: 2 &#8594; 41%</title></circle>
+<circle cx="95.5" cy="37.1" r="7" class="hit"><title>random 16-digit: 3 &#8594; 45%</title></circle>
+<circle cx="117.2" cy="50.2" r="7" class="hit"><title>random 16-digit: 4 &#8594; 43%</title></circle>
+<circle cx="139.0" cy="60.9" r="7" class="hit"><title>random 16-digit: 5 &#8594; 40%</title></circle>
+<circle cx="160.7" cy="76.1" r="7" class="hit"><title>random 16-digit: 6 &#8594; 37%</title></circle>
+<circle cx="182.4" cy="98.7" r="7" class="hit"><title>random 16-digit: 7 &#8594; 32%</title></circle>
+<circle cx="204.2" cy="110.8" r="7" class="hit"><title>random 16-digit: 8 &#8594; 30%</title></circle>
+<circle cx="225.9" cy="147.8" r="7" class="hit"><title>random 16-digit: 9 &#8594; 22%</title></circle>
+<circle cx="247.7" cy="169.6" r="7" class="hit"><title>random 16-digit: 10 &#8594; 18%</title></circle>
+<circle cx="269.4" cy="200.4" r="7" class="hit"><title>random 16-digit: 11 &#8594; 11%</title></circle>
+<circle cx="291.1" cy="187.6" r="7" class="hit"><title>random 16-digit: 12 &#8594; 14%</title></circle>
+<circle cx="312.9" cy="179.1" r="7" class="hit"><title>random 16-digit: 13 &#8594; 16%</title></circle>
+<circle cx="334.6" cy="189.4" r="7" class="hit"><title>random 16-digit: 14 &#8594; 14%</title></circle>
+<circle cx="356.3" cy="185.6" r="7" class="hit"><title>random 16-digit: 15 &#8594; 15%</title></circle>
+<circle cx="378.1" cy="158.2" r="7" class="hit"><title>random 16-digit: 16 &#8594; 20%</title></circle>
+<circle cx="399.8" cy="144.6" r="7" class="hit"><title>random 16-digit: 17 &#8594; 23%</title></circle>
+<circle cx="421.6" cy="134.9" r="7" class="hit"><title>random 16-digit: 18 &#8594; 25%</title></circle>
+<circle cx="443.3" cy="144.5" r="7" class="hit"><title>random 16-digit: 19 &#8594; 23%</title></circle>
+<circle cx="465.0" cy="152.1" r="7" class="hit"><title>random 16-digit: 20 &#8594; 21%</title></circle>
+<circle cx="486.8" cy="157.3" r="7" class="hit"><title>random 16-digit: 21 &#8594; 20%</title></circle>
+<circle cx="508.5" cy="167.8" r="7" class="hit"><title>random 16-digit: 22 &#8594; 18%</title></circle>
+<circle cx="530.3" cy="179.7" r="7" class="hit"><title>random 16-digit: 23 &#8594; 16%</title></circle>
+<circle cx="552.0" cy="188.8" r="7" class="hit"><title>random 16-digit: 24 &#8594; 14%</title></circle>
+<path d="M52.0,146.5 L73.7,81.3 L95.5,76.3 L117.2,83.2 L139.0,79.4 L160.7,84.3 L182.4,96.0 L204.2,94.0 L225.9,108.2 L247.7,118.2 L269.4,156.2 L291.1,201.3 L312.9,212.4 L334.6,220.2 L356.3,230.9 L378.1,224.8 L399.8,209.1 L421.6,196.2 L443.3,180.5 L465.0,156.6 L486.8,135.5 L508.5,134.3 L530.3,157.5 L552.0,182.9" class="series" style="stroke: var(--s2); stroke-width: 2"/>
+<circle cx="52.0" cy="146.5" r="7" class="hit"><title>run of nines, 20-digit: 1 &#8594; 23%</title></circle>
+<circle cx="73.7" cy="81.3" r="7" class="hit"><title>run of nines, 20-digit: 2 &#8594; 36%</title></circle>
+<circle cx="95.5" cy="76.3" r="7" class="hit"><title>run of nines, 20-digit: 3 &#8594; 37%</title></circle>
+<circle cx="117.2" cy="83.2" r="7" class="hit"><title>run of nines, 20-digit: 4 &#8594; 36%</title></circle>
+<circle cx="139.0" cy="79.4" r="7" class="hit"><title>run of nines, 20-digit: 5 &#8594; 36%</title></circle>
+<circle cx="160.7" cy="84.3" r="7" class="hit"><title>run of nines, 20-digit: 6 &#8594; 35%</title></circle>
+<circle cx="182.4" cy="96.0" r="7" class="hit"><title>run of nines, 20-digit: 7 &#8594; 33%</title></circle>
+<circle cx="204.2" cy="94.0" r="7" class="hit"><title>run of nines, 20-digit: 8 &#8594; 33%</title></circle>
+<circle cx="225.9" cy="108.2" r="7" class="hit"><title>run of nines, 20-digit: 9 &#8594; 31%</title></circle>
+<circle cx="247.7" cy="118.2" r="7" class="hit"><title>run of nines, 20-digit: 10 &#8594; 28%</title></circle>
+<circle cx="269.4" cy="156.2" r="7" class="hit"><title>run of nines, 20-digit: 11 &#8594; 21%</title></circle>
+<circle cx="291.1" cy="201.3" r="7" class="hit"><title>run of nines, 20-digit: 12 &#8594; 11%</title></circle>
+<circle cx="312.9" cy="212.4" r="7" class="hit"><title>run of nines, 20-digit: 13 &#8594; 9%</title></circle>
+<circle cx="334.6" cy="220.2" r="7" class="hit"><title>run of nines, 20-digit: 14 &#8594; 7%</title></circle>
+<circle cx="356.3" cy="230.9" r="7" class="hit"><title>run of nines, 20-digit: 15 &#8594; 5%</title></circle>
+<circle cx="378.1" cy="224.8" r="7" class="hit"><title>run of nines, 20-digit: 16 &#8594; 6%</title></circle>
+<circle cx="399.8" cy="209.1" r="7" class="hit"><title>run of nines, 20-digit: 17 &#8594; 10%</title></circle>
+<circle cx="421.6" cy="196.2" r="7" class="hit"><title>run of nines, 20-digit: 18 &#8594; 12%</title></circle>
+<circle cx="443.3" cy="180.5" r="7" class="hit"><title>run of nines, 20-digit: 19 &#8594; 16%</title></circle>
+<circle cx="465.0" cy="156.6" r="7" class="hit"><title>run of nines, 20-digit: 20 &#8594; 21%</title></circle>
+<circle cx="486.8" cy="135.5" r="7" class="hit"><title>run of nines, 20-digit: 21 &#8594; 25%</title></circle>
+<circle cx="508.5" cy="134.3" r="7" class="hit"><title>run of nines, 20-digit: 22 &#8594; 25%</title></circle>
+<circle cx="530.3" cy="157.5" r="7" class="hit"><title>run of nines, 20-digit: 23 &#8594; 20%</title></circle>
+<circle cx="552.0" cy="182.9" r="7" class="hit"><title>run of nines, 20-digit: 24 &#8594; 15%</title></circle>
+<line x1="556" x2="570" y1="182.9" y2="182.9" style="stroke: var(--s2); stroke-width: 2.6"/>
+<text x="575" y="186.9" class="direct">20 digits, nines</text>
+<line x1="556" x2="570" y1="196.9" y2="196.9" style="stroke: var(--s1); stroke-width: 2.6"/>
+<text x="575" y="200.9" class="direct">16 digits</text>
+<line x1="556" x2="570" y1="210.9" y2="210.9" style="stroke: var(--ctx); stroke-width: 2.6"/>
+<text x="575" y="214.9" class="direct">6 digits</text>
+</svg>
+  <p class="fig-cap">v22. Share of a place token&rsquo;s attention that goes to the four scratch tokens.</p>
+
+  <div class="ledger"></div>
+
+  <h2>Is the carry a real variable?</h2>
+  <p>Probes and attention describe; swapping states tests. Take a 14-digit problem where some place <em>p</em> has no carry coming in and whose two digits sum to 2&ndash;6 (so one more cannot carry on), and make a second run in which the place below <em>p</em> is forced to produce a carry. At some round, copy the second run&rsquo;s state for place <em>p</em> into the first run and carry on. If <em>p</em>&rsquo;s state really holds the carry, its answer digit should go up by exactly one and nothing else should move.</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="Grafting a carried-in state into one place">
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="195.5" y2="195.5" class="grid"/>
+<text x="44" y="199.5" class="tick" text-anchor="end">25%</text>
+<line x1="52" x2="552" y1="135.0" y2="135.0" class="grid"/>
+<text x="44" y="139.0" class="tick" text-anchor="end">50%</text>
+<line x1="52" x2="552" y1="74.5" y2="74.5" class="grid"/>
+<text x="44" y="78.5" class="tick" text-anchor="end">75%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">100%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">1</text>
+<text x="90.5" y="274" class="tick" text-anchor="middle">2</text>
+<text x="167.4" y="274" class="tick" text-anchor="middle">4</text>
+<text x="244.3" y="274" class="tick" text-anchor="middle">6</text>
+<text x="321.2" y="274" class="tick" text-anchor="middle">8</text>
+<text x="398.2" y="274" class="tick" text-anchor="middle">10</text>
+<text x="475.1" y="274" class="tick" text-anchor="middle">12</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">14</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">round at which the state was swapped in</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">fraction of 240 problems</text>
+<path d="M52.0,256.0 L90.5,256.0 L128.9,256.0 L167.4,256.0 L205.8,256.0 L244.3,254.0 L321.2,175.3 L398.2,63.4 L552.0,14.0" class="series" style="stroke: var(--s1); stroke-width: 2.4"/>
+<circle cx="52.0" cy="256.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="90.5" cy="256.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="128.9" cy="256.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="167.4" cy="256.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="205.8" cy="256.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="244.3" cy="254.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="321.2" cy="175.3" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="398.2" cy="63.4" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="552.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="52.0" cy="256.0" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 1 &#8594; 0%</title></circle>
+<circle cx="90.5" cy="256.0" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 2 &#8594; 0%</title></circle>
+<circle cx="128.9" cy="256.0" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 3 &#8594; 0%</title></circle>
+<circle cx="167.4" cy="256.0" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 4 &#8594; 0%</title></circle>
+<circle cx="205.8" cy="256.0" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 5 &#8594; 0%</title></circle>
+<circle cx="244.3" cy="254.0" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 6 &#8594; 1%</title></circle>
+<circle cx="321.2" cy="175.3" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 8 &#8594; 33%</title></circle>
+<circle cx="398.2" cy="63.4" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 10 &#8594; 80%</title></circle>
+<circle cx="552.0" cy="14.0" r="7" class="hit"><title>the grafted place’s answer digit goes up by one: 14 &#8594; 100%</title></circle>
+<path d="M52.0,256.0 L90.5,256.0 L128.9,256.0 L167.4,256.0 L205.8,256.0 L244.3,256.0 L321.2,256.0 L398.2,256.0 L552.0,256.0" class="series" style="stroke: var(--ctx); stroke-width: 2; stroke-dasharray: 4 3"/>
+<circle cx="52.0" cy="256.0" r="7" class="hit"><title>any other place changes: 1 &#8594; 0%</title></circle>
+<circle cx="90.5" cy="256.0" r="7" class="hit"><title>any other place changes: 2 &#8594; 0%</title></circle>
+<circle cx="128.9" cy="256.0" r="7" class="hit"><title>any other place changes: 3 &#8594; 0%</title></circle>
+<circle cx="167.4" cy="256.0" r="7" class="hit"><title>any other place changes: 4 &#8594; 0%</title></circle>
+<circle cx="205.8" cy="256.0" r="7" class="hit"><title>any other place changes: 5 &#8594; 0%</title></circle>
+<circle cx="244.3" cy="256.0" r="7" class="hit"><title>any other place changes: 6 &#8594; 0%</title></circle>
+<circle cx="321.2" cy="256.0" r="7" class="hit"><title>any other place changes: 8 &#8594; 0%</title></circle>
+<circle cx="398.2" cy="256.0" r="7" class="hit"><title>any other place changes: 10 &#8594; 0%</title></circle>
+<circle cx="552.0" cy="256.0" r="7" class="hit"><title>any other place changes: 14 &#8594; 0%</title></circle>
+<line x1="556" x2="570" y1="14.0" y2="14.0" style="stroke: var(--s1); stroke-width: 2.6"/>
+<text x="575" y="18.0" class="direct">digit +1</text>
+<line x1="556" x2="570" y1="254.0" y2="254.0" style="stroke: var(--ctx); stroke-width: 2.6; stroke-dasharray: 4 3"/>
+<text x="575" y="258.0" class="direct">others change</text>
+</svg>
+  <p class="fig-cap">v22, 240 problems, <em>p</em> between 4 and 10. Swaps before round 6 do nothing, presumably because the second run has not yet worked out its own carry. By round 14 every swap raises the digit by one, none changes the next place up, and no other place changes. As a control, swapping the state of a place three below <em>p</em> at round 4, where the two runs agree, left every answer unchanged.</p>
+  <p>So by round 10 or so a place&rsquo;s state carries the carry-in in a form the readout uses. The negative results matter as much. The same swap into the bottom of a run of nines at rounds 12, 14 and 16 does flip that place, but none of the six places above it ever followed (at rounds 8 and 10 not even that place flipped). A second attempt added a &ldquo;carry-in direction&rdquo; (the difference between the average states with and without a carry, at 0.5, 1 and 2 times a token&rsquo;s typical size) at rounds 3, 5, 8 and 12; no place in the run flipped, in any of the 160 problems, in any setting. The carry cannot be injected mid-way and have the block carry it on. <strong>It behaves like a trajectory that unfolds from the real operands, not a procedure that can be re-entered.</strong> That is a statement about these two ways of injecting a carry, not a proof that no other way exists.</p>
+  <p>Without any patching, the natural speed of a carry can be read from paired runs: a number with a run of nines, with and without a 1 added at the bottom, decoded at every round.</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="When a carry reaches each place of a run of nines">
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0</text>
+<line x1="52" x2="552" y1="209.5" y2="209.5" class="grid"/>
+<text x="44" y="213.5" class="tick" text-anchor="end">5</text>
+<line x1="52" x2="552" y1="162.9" y2="162.9" class="grid"/>
+<text x="44" y="166.9" class="tick" text-anchor="end">10</text>
+<line x1="52" x2="552" y1="116.4" y2="116.4" class="grid"/>
+<text x="44" y="120.4" class="tick" text-anchor="end">15</text>
+<line x1="52" x2="552" y1="69.8" y2="69.8" class="grid"/>
+<text x="44" y="73.8" class="tick" text-anchor="end">20</text>
+<line x1="52" x2="552" y1="32.6" y2="32.6" class="grid"/>
+<text x="44" y="36.6" class="tick" text-anchor="end">24</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">0</text>
+<text x="142.9" y="274" class="tick" text-anchor="middle">2</text>
+<text x="233.8" y="274" class="tick" text-anchor="middle">4</text>
+<text x="324.7" y="274" class="tick" text-anchor="middle">6</text>
+<text x="415.6" y="274" class="tick" text-anchor="middle">8</text>
+<text x="506.5" y="274" class="tick" text-anchor="middle">10</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">place along a run of nines (0 = where the carry enters)</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">round the digit becomes 0</text>
+<path d="M52.0,181.5 L97.5,219.5 L142.9,207.9 L188.4,155.3 L233.8,130.2 L279.3,106.8 L324.7,94.7 L370.2,79.1 L415.6,64.1 L461.1,46.6 L506.5,36.5 L552.0,41.9" class="series" style="stroke: var(--s1); stroke-width: 2.2"/>
+<circle cx="52.0" cy="181.5" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="97.5" cy="219.5" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="142.9" cy="207.9" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="188.4" cy="155.3" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="233.8" cy="130.2" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="279.3" cy="106.8" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="324.7" cy="94.7" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="370.2" cy="79.1" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="415.6" cy="64.1" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="461.1" cy="46.6" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="506.5" cy="36.5" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="552.0" cy="41.9" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="52.0" cy="181.5" r="7" class="hit"><title>first round the digit is right: 0 &#8594; 8.00</title></circle>
+<circle cx="97.5" cy="219.5" r="7" class="hit"><title>first round the digit is right: 1 &#8594; 3.92</title></circle>
+<circle cx="142.9" cy="207.9" r="7" class="hit"><title>first round the digit is right: 2 &#8594; 5.17</title></circle>
+<circle cx="188.4" cy="155.3" r="7" class="hit"><title>first round the digit is right: 3 &#8594; 10.82</title></circle>
+<circle cx="233.8" cy="130.2" r="7" class="hit"><title>first round the digit is right: 4 &#8594; 13.52</title></circle>
+<circle cx="279.3" cy="106.8" r="7" class="hit"><title>first round the digit is right: 5 &#8594; 16.02</title></circle>
+<circle cx="324.7" cy="94.7" r="7" class="hit"><title>first round the digit is right: 6 &#8594; 17.34</title></circle>
+<circle cx="370.2" cy="79.1" r="7" class="hit"><title>first round the digit is right: 7 &#8594; 19.01</title></circle>
+<circle cx="415.6" cy="64.1" r="7" class="hit"><title>first round the digit is right: 8 &#8594; 20.62</title></circle>
+<circle cx="461.1" cy="46.6" r="7" class="hit"><title>first round the digit is right: 9 &#8594; 22.50</title></circle>
+<circle cx="506.5" cy="36.5" r="7" class="hit"><title>first round the digit is right: 10 &#8594; 23.58</title></circle>
+<circle cx="552.0" cy="41.9" r="7" class="hit"><title>first round the digit is right: 11 &#8594; 23.00</title></circle>
+<path d="M52.0,208.5 L552.0,18.8" class="series" style="stroke: var(--s2); stroke-width: 2; stroke-dasharray: 6 4"/>
+<circle cx="52.0" cy="208.5" r="7" class="hit"><title>fit: 0 &#8594; 5.10</title></circle>
+<circle cx="552.0" cy="18.8" r="7" class="hit"><title>fit: 11 &#8594; 25.48</title></circle>
+<line x1="556" x2="570" y1="18.8" y2="18.8" style="stroke: var(--s2); stroke-width: 2.6; stroke-dasharray: 6 4"/>
+<text x="575" y="22.8" class="direct">1.85 rounds/place</text>
+<line x1="556" x2="570" y1="41.9" y2="41.9" style="stroke: var(--s1); stroke-width: 2.6"/>
+<text x="575" y="45.9" class="direct">measured</text>
+</svg>
+  <p class="fig-cap">v22, 200 of 200 problems carried all the way; runs of 7&ndash;11 nines in the middle of a 14-digit number, each place&rsquo;s digit first becoming 0 and staying there. The unpatched controls decoded as a clean run of nines in 73% of cases. The first three places behave irregularly; from place 3 on the ramp is straight.</p>
+  <p>The fit gives 1.85 rounds per place over all places, 1.6 from place 3 on, with about 5 rounds of start-up. At that speed 24 rounds reach about the tenth place of a chain, so a long mid-number carry does not fit in v22&rsquo;s budget, and the cost is linear in the length of the chain. A carry-lookahead adder would be logarithmic. I did not find one here. The wavefront of attention at offset &minus;1 is what a ripple looks like once all the places run at once.</p>
+
+  <div class="ledger"></div>
+
+  <h2>The four scratch tokens</h2>
+  <p>The scratch tokens are learned vectors added to the sequence with no digit attached. They are not interchangeable, and not all of them matter.</p>
+  <div class="table-wrap"><table><caption>Accuracy when one scratch token&rsquo;s starting value is replaced (200 problems per column)</caption><thead><tr><th></th><th>1–10</th><th>14–18</th><th>19–21</th><th>24–26</th><th>nines</th></tr></thead><tbody><tr><td>nothing removed</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td>78%</td><td><span class="hi">100%</span></td></tr><tr class="split"><td>token 0 &rarr; zeros</td><td><span class="lo">0%</span></td><td><span class="lo">0%</span></td><td><span class="lo">0%</span></td><td><span class="lo">0%</span></td><td><span class="lo">0%</span></td></tr><tr class=""><td>token 1 &rarr; zeros</td><td><span class="lo">42%</span></td><td><span class="lo">48%</span></td><td>52%</td><td>55%</td><td><span class="lo">13%</span></td></tr><tr class=""><td>token 2 &rarr; zeros</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td>84%</td><td><span class="hi">100%</span></td></tr><tr class=""><td>token 3 &rarr; zeros</td><td>68%</td><td><span class="lo">38%</span></td><td><span class="lo">24%</span></td><td><span class="lo">15%</span></td><td>51%</td></tr><tr class="split"><td>token 0 &rarr; others&rsquo; mean</td><td><span class="lo">0%</span></td><td><span class="lo">0%</span></td><td><span class="lo">0%</span></td><td><span class="lo">0%</span></td><td><span class="lo">0%</span></td></tr><tr class=""><td>token 1 &rarr; others&rsquo; mean</td><td><span class="hi">99%</span></td><td>76%</td><td>81%</td><td>72%</td><td>77%</td></tr><tr class=""><td>token 2 &rarr; others&rsquo; mean</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td>82%</td><td><span class="hi">100%</span></td></tr><tr class=""><td>token 3 &rarr; others&rsquo; mean</td><td>68%</td><td><span class="lo">38%</span></td><td><span class="lo">24%</span></td><td><span class="lo">14%</span></td><td>52%</td></tr></tbody></table></div>
+  <p class="fig-cap">v22. One token&rsquo;s starting value replaced by zeros, or by the average of the other three (&ldquo;others&rsquo; mean&rdquo;). &ldquo;Nines&rdquo; are problems with a run of nines, of 8, 16 and 22 digits. Replacing all four tokens by either also gives 0% everywhere. Token 0 cannot be replaced by either: the model gets nothing right, at any length. Token 2 can be removed with no loss (accuracy on the 24&ndash;26 digit set was unchanged or a little higher, within the noise of 200 problems). Token 1 is hurt less by the average of the others than by zeros. Token 3 costs more the longer the problem.</p>
+  <p>Attention is consistent with that. In the first ten rounds token 0 receives the most attention from place tokens (up to 22% of a place token&rsquo;s attention on a 16-digit problem, against at most 12% for the others). From round 4 to 9 on 20-digit runs of nines, token 3 receives the most of the four (up to 19%). Token 1 reads the place tokens as heavily as the others do, but is almost never read by them (at most 7%).</p>
+  <p>What do they hold? A linear probe on the four tokens together reads the <strong>number of digits</strong> in the problem almost perfectly by round 4 (98%; always guessing the commonest length would score 9%), and reads the total number of carries (32% at round 8, against 15%) and the longest chain (29%, against 21%) barely better than guessing. They carry the length of the problem, not its carry statistics. I read &ldquo;shared channel for the length&rdquo; into that; it is an interpretation, and I did not open the circuits.</p>
+
+  <div class="ledger"></div>
+
+  <h2>The answer never settles</h2>
+  <p>Run v22 longer than the 24 rounds it was trained for and accuracy does not stay put:</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="Accuracy against number of combiner rounds for v22, by problem length">
+<rect x="239.5" y="14" width="312.5" height="242" class="shade"/>
+<text x="243.5" y="26" class="tick shade-label">past the trained 24 rounds</text>
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="195.5" y2="195.5" class="grid"/>
+<text x="44" y="199.5" class="tick" text-anchor="end">25%</text>
+<line x1="52" x2="552" y1="135.0" y2="135.0" class="grid"/>
+<text x="44" y="139.0" class="tick" text-anchor="end">50%</text>
+<line x1="52" x2="552" y1="74.5" y2="74.5" class="grid"/>
+<text x="44" y="78.5" class="tick" text-anchor="end">75%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">100%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">0</text>
+<text x="114.5" y="274" class="tick" text-anchor="middle">8</text>
+<text x="177.0" y="274" class="tick" text-anchor="middle">16</text>
+<text x="239.5" y="274" class="tick" text-anchor="middle">24</text>
+<text x="302.0" y="274" class="tick" text-anchor="middle">32</text>
+<text x="364.5" y="274" class="tick" text-anchor="middle">40</text>
+<text x="427.0" y="274" class="tick" text-anchor="middle">48</text>
+<text x="489.5" y="274" class="tick" text-anchor="middle">56</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">64</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">rounds of the combiner block</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">exact-match accuracy</text>
+<line x1="239.5" x2="239.5" y1="14" y2="256" class="ref"/>
+<path d="M52.0,254.4 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,256.0 L91.1,256.0 L98.9,256.0 L106.7,254.4 L114.5,236.6 L122.3,204.4 L130.1,156.0 L137.9,91.4 L145.8,52.7 L153.6,30.1 L161.4,15.6 L169.2,14.0 L177.0,14.0 L184.8,14.0 L192.6,14.0 L200.4,14.0 L208.2,14.0 L216.1,14.0 L223.9,14.0 L231.7,14.0 L239.5,14.0 L247.3,14.0 L255.1,14.0 L262.9,14.0 L270.8,14.0 L278.6,14.0 L286.4,14.0 L294.2,14.0 L302.0,14.0 L309.8,14.0 L317.6,14.0 L325.4,14.0 L333.2,14.0 L341.1,14.0 L348.9,14.0 L356.7,14.0 L364.5,14.0 L372.3,14.0 L380.1,14.0 L387.9,14.0 L395.8,14.0 L403.6,14.0 L411.4,14.0 L419.2,14.0 L427.0,14.0 L434.8,14.0 L442.6,14.0 L450.4,14.0 L458.2,14.0 L466.1,14.0 L473.9,14.0 L481.7,14.0 L489.5,15.6 L497.3,15.6 L505.1,17.2 L512.9,18.8 L520.8,18.8 L528.6,20.5 L536.4,23.7 L544.2,23.7 L552.0,26.9" class="series" style="stroke: var(--t1); stroke-width: 2"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,256.0 L91.1,256.0 L98.9,256.0 L106.7,256.0 L114.5,256.0 L122.3,252.8 L130.1,243.1 L137.9,202.8 L145.8,156.0 L153.6,115.6 L161.4,73.7 L169.2,39.8 L177.0,17.2 L184.8,14.0 L192.6,14.0 L200.4,14.0 L208.2,14.0 L216.1,14.0 L223.9,14.0 L231.7,14.0 L239.5,14.0 L247.3,14.0 L255.1,14.0 L262.9,14.0 L270.8,14.0 L278.6,14.0 L286.4,14.0 L294.2,14.0 L302.0,14.0 L309.8,14.0 L317.6,14.0 L325.4,14.0 L333.2,14.0 L341.1,14.0 L348.9,14.0 L356.7,14.0 L364.5,14.0 L372.3,14.0 L380.1,14.0 L387.9,14.0 L395.8,14.0 L403.6,14.0 L411.4,14.0 L419.2,14.0 L427.0,14.0 L434.8,14.0 L442.6,14.0 L450.4,14.0 L458.2,14.0 L466.1,14.0 L473.9,14.0 L481.7,14.0 L489.5,15.6 L497.3,15.6 L505.1,17.2 L512.9,17.2 L520.8,20.5 L528.6,23.7 L536.4,25.3 L544.2,25.3 L552.0,31.7" class="series" style="stroke: var(--t2); stroke-width: 2"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,256.0 L91.1,256.0 L98.9,256.0 L106.7,256.0 L114.5,256.0 L122.3,256.0 L130.1,252.8 L137.9,249.5 L145.8,244.7 L153.6,233.4 L161.4,220.5 L169.2,183.4 L177.0,133.4 L184.8,94.7 L192.6,55.9 L200.4,28.5 L208.2,15.6 L216.1,14.0 L223.9,14.0 L231.7,14.0 L239.5,14.0 L247.3,14.0 L255.1,14.0 L262.9,14.0 L270.8,14.0 L278.6,14.0 L286.4,14.0 L294.2,14.0 L302.0,14.0 L309.8,14.0 L317.6,14.0 L325.4,14.0 L333.2,14.0 L341.1,14.0 L348.9,14.0 L356.7,14.0 L364.5,14.0 L372.3,14.0 L380.1,14.0 L387.9,14.0 L395.8,14.0 L403.6,14.0 L411.4,14.0 L419.2,14.0 L427.0,14.0 L434.8,14.0 L442.6,15.6 L450.4,15.6 L458.2,15.6 L466.1,15.6 L473.9,17.2 L481.7,17.2 L489.5,17.2 L497.3,22.1 L505.1,26.9 L512.9,33.4 L520.8,41.4 L528.6,49.5 L536.4,51.1 L544.2,55.9 L552.0,59.2" class="series" style="stroke: var(--t3); stroke-width: 2"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,256.0 L91.1,256.0 L98.9,256.0 L106.7,256.0 L114.5,256.0 L122.3,256.0 L130.1,256.0 L137.9,256.0 L145.8,256.0 L153.6,256.0 L161.4,256.0 L169.2,254.4 L177.0,249.5 L184.8,238.3 L192.6,206.0 L200.4,136.6 L208.2,51.1 L216.1,23.7 L223.9,22.1 L231.7,22.1 L239.5,22.1 L247.3,22.1 L255.1,22.1 L262.9,22.1 L270.8,22.1 L278.6,22.1 L286.4,22.1 L294.2,22.1 L302.0,22.1 L309.8,22.1 L317.6,22.1 L325.4,22.1 L333.2,22.1 L341.1,22.1 L348.9,22.1 L356.7,22.1 L364.5,22.1 L372.3,22.1 L380.1,22.1 L387.9,22.1 L395.8,22.1 L403.6,22.1 L411.4,22.1 L419.2,23.7 L427.0,23.7 L434.8,25.3 L442.6,28.5 L450.4,30.1 L458.2,35.0 L466.1,39.8 L473.9,46.3 L481.7,49.5 L489.5,57.6 L497.3,64.0 L505.1,70.5 L512.9,73.7 L520.8,80.1 L528.6,91.4 L536.4,101.1 L544.2,109.2 L552.0,114.0" class="series" style="stroke: var(--t4); stroke-width: 2"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,256.0 L91.1,256.0 L98.9,256.0 L106.7,256.0 L114.5,256.0 L122.3,256.0 L130.1,256.0 L137.9,256.0 L145.8,256.0 L153.6,256.0 L161.4,256.0 L169.2,256.0 L177.0,256.0 L184.8,256.0 L192.6,256.0 L200.4,246.3 L208.2,209.2 L216.1,157.6 L223.9,106.0 L231.7,72.1 L239.5,65.6 L247.3,55.9 L255.1,59.2 L262.9,60.8 L270.8,64.0 L278.6,68.9 L286.4,72.1 L294.2,76.9 L302.0,78.5 L309.8,80.1 L317.6,88.2 L325.4,91.4 L333.2,102.7 L341.1,107.6 L348.9,114.0 L356.7,123.7 L364.5,125.3 L372.3,130.2 L380.1,135.0 L387.9,139.8 L395.8,143.1 L403.6,154.4 L411.4,162.4 L419.2,173.7 L427.0,175.3 L434.8,185.0 L442.6,188.2 L450.4,188.2 L458.2,191.5 L466.1,196.3 L473.9,201.1 L481.7,204.4 L489.5,209.2 L497.3,212.4 L505.1,215.7 L512.9,222.1 L520.8,227.0 L528.6,227.0 L536.4,228.6 L544.2,236.6 L552.0,241.5" class="series" style="stroke: var(--t5); stroke-width: 2"/>
+<line x1="556" x2="570" y1="26.9" y2="26.9" style="stroke: var(--t1); stroke-width: 2.6"/>
+<text x="575" y="30.9" class="direct">1–10 digits</text>
+<line x1="556" x2="570" y1="40.9" y2="40.9" style="stroke: var(--t2); stroke-width: 2.6"/>
+<text x="575" y="44.9" class="direct">11–13</text>
+<line x1="556" x2="570" y1="59.2" y2="59.2" style="stroke: var(--t3); stroke-width: 2.6"/>
+<text x="575" y="63.2" class="direct">14–18</text>
+<line x1="556" x2="570" y1="114.0" y2="114.0" style="stroke: var(--t4); stroke-width: 2.6"/>
+<text x="575" y="118.0" class="direct">19–21</text>
+<line x1="556" x2="570" y1="241.5" y2="241.5" style="stroke: var(--t5); stroke-width: 2.6"/>
+<text x="575" y="245.5" class="direct">24–26</text>
+</svg>
+  <p class="fig-cap">v22, 150 random problems per length set; curves are means over those problems, so heights differ from the full test sets by a few points (the 19&ndash;21 digit set reads 97% at round 24 here and 100% on all 600 test problems). The shapes are the point.</p>
+  <p>Each length set rises, plateaus, and falls, later for shorter problems. Longer problems need more rounds to reach their plateau: the 14&ndash;18 digit set first reaches 99% at round 20, against round 14 for 1&ndash;10 digits. The 24&ndash;26 digit set peaks at round 25 with 83%, just past the trained 24, and is at 6% by round 64. This is why the readout round matters, and it fits a simple reading of v22&rsquo;s weakness at 25&ndash;26 digits (80% and 52%): one or two more rounds would help, and then the drift would take it back. That reading is consistent with the curve; I did not run an intervention that isolates it.</p>
+  <p>The state itself says why. Track how much it changes per round, relative to its size, and compare consecutive changes by direction:</p>
+  <div class="table-wrap"><table class="compact"><caption>Size of the change in the state per round, relative to the state (place tokens)</caption><thead><tr><th></th><th>round 12</th><th>round 24</th><th>round 48</th><th>last round</th><th>cosine</th></tr></thead><tbody><tr><td>v22, no carries</td><td>0.133</td><td>0.053</td><td>0.025</td><td>0.019 (r64)</td><td>1.00</td></tr><tr><td>v22, 24 nines + 1</td><td>0.137</td><td>0.121</td><td>0.042</td><td>0.027 (r64)</td><td>1.00</td></tr><tr><td>v23, no carries</td><td>0.134</td><td>0.049</td><td>0.025</td><td>0.018 (r64)</td><td>1.00</td></tr><tr><td>v23, 24 nines + 1</td><td>0.179</td><td>0.080</td><td>0.042</td><td>0.030 (r64)</td><td>1.00</td></tr><tr><td>v33, no carries</td><td>0.126</td><td>0.056</td><td>0.028</td><td>0.009 (r120)</td><td>1.00</td></tr><tr><td>v33, 24 nines + 1</td><td>0.144</td><td>0.155</td><td>0.036</td><td>0.010 (r120)</td><td>1.00</td></tr></tbody></table></div>
+  <p class="fig-cap">Place tokens, averaged over 24 problems of each kind (one problem for the nines). The cosine compares each round&rsquo;s change with the previous round&rsquo;s (late rounds): 1.00 means the state keeps being pushed the same way. The last round the probe ran is 64 for v22 and v23, and 120 for v33.</p>
+  <p>The state does not settle to a point. After the answer is already right it keeps travelling in one direction at a small but non-zero rate: about 2%&ndash;5% of its own size per round between rounds 24 and 64 (more, 12%, for the 24-nines problem at round 24, where the carry is still in transit). For a while that is invisible because the decision boundaries are far away; in v22 it eventually crosses them. Block weights shared across rounds do not on their own give you an equilibrium (compare deep-equilibrium models, which solve for one); they give you a trajectory, and a trajectory is read at a time.</p>
+  <p>v23 changes only how the block is trained: each batch uses a random number of rounds, from as many as the problem has digits up to the full budget, so the block is regularly asked to keep a right answer right.</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="Accuracy against number of combiner rounds for v23, by problem length">
+<rect x="239.5" y="14" width="312.5" height="242" class="shade"/>
+<text x="243.5" y="26" class="tick shade-label">past the trained 24 rounds</text>
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="195.5" y2="195.5" class="grid"/>
+<text x="44" y="199.5" class="tick" text-anchor="end">25%</text>
+<line x1="52" x2="552" y1="135.0" y2="135.0" class="grid"/>
+<text x="44" y="139.0" class="tick" text-anchor="end">50%</text>
+<line x1="52" x2="552" y1="74.5" y2="74.5" class="grid"/>
+<text x="44" y="78.5" class="tick" text-anchor="end">75%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">100%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">0</text>
+<text x="114.5" y="274" class="tick" text-anchor="middle">8</text>
+<text x="177.0" y="274" class="tick" text-anchor="middle">16</text>
+<text x="239.5" y="274" class="tick" text-anchor="middle">24</text>
+<text x="302.0" y="274" class="tick" text-anchor="middle">32</text>
+<text x="364.5" y="274" class="tick" text-anchor="middle">40</text>
+<text x="427.0" y="274" class="tick" text-anchor="middle">48</text>
+<text x="489.5" y="274" class="tick" text-anchor="middle">56</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">64</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">rounds of the combiner block</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">exact-match accuracy</text>
+<line x1="239.5" x2="239.5" y1="14" y2="256" class="ref"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,252.8 L75.4,218.9 L83.2,128.5 L91.1,57.6 L98.9,18.8 L106.7,14.0 L114.5,14.0 L122.3,14.0 L130.1,14.0 L137.9,14.0 L145.8,14.0 L153.6,14.0 L161.4,14.0 L169.2,14.0 L177.0,14.0 L184.8,14.0 L192.6,14.0 L200.4,14.0 L208.2,14.0 L216.1,14.0 L223.9,14.0 L231.7,14.0 L239.5,14.0 L247.3,14.0 L255.1,14.0 L262.9,14.0 L270.8,14.0 L278.6,14.0 L286.4,14.0 L294.2,14.0 L302.0,14.0 L309.8,14.0 L317.6,14.0 L325.4,14.0 L333.2,14.0 L341.1,14.0 L348.9,14.0 L356.7,14.0 L364.5,14.0 L372.3,14.0 L380.1,14.0 L387.9,14.0 L395.8,14.0 L403.6,14.0 L411.4,14.0 L419.2,14.0 L427.0,14.0 L434.8,14.0 L442.6,14.0 L450.4,14.0 L458.2,14.0 L466.1,14.0 L473.9,14.0 L481.7,14.0 L489.5,14.0 L497.3,14.0 L505.1,14.0 L512.9,14.0 L520.8,14.0 L528.6,14.0 L536.4,14.0 L544.2,14.0 L552.0,14.0" class="series" style="stroke: var(--t1); stroke-width: 2"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,254.4 L91.1,227.0 L98.9,162.4 L106.7,93.1 L114.5,60.8 L122.3,23.7 L130.1,14.0 L137.9,14.0 L145.8,14.0 L153.6,14.0 L161.4,14.0 L169.2,14.0 L177.0,14.0 L184.8,14.0 L192.6,14.0 L200.4,14.0 L208.2,14.0 L216.1,14.0 L223.9,14.0 L231.7,14.0 L239.5,14.0 L247.3,14.0 L255.1,14.0 L262.9,14.0 L270.8,14.0 L278.6,14.0 L286.4,14.0 L294.2,14.0 L302.0,14.0 L309.8,14.0 L317.6,14.0 L325.4,14.0 L333.2,14.0 L341.1,14.0 L348.9,14.0 L356.7,14.0 L364.5,14.0 L372.3,14.0 L380.1,14.0 L387.9,14.0 L395.8,14.0 L403.6,14.0 L411.4,14.0 L419.2,14.0 L427.0,14.0 L434.8,14.0 L442.6,14.0 L450.4,14.0 L458.2,14.0 L466.1,14.0 L473.9,14.0 L481.7,14.0 L489.5,14.0 L497.3,14.0 L505.1,14.0 L512.9,14.0 L520.8,14.0 L528.6,14.0 L536.4,14.0 L544.2,14.0 L552.0,14.0" class="series" style="stroke: var(--t2); stroke-width: 2"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,256.0 L91.1,256.0 L98.9,256.0 L106.7,252.8 L114.5,222.1 L122.3,188.2 L130.1,135.0 L137.9,101.1 L145.8,72.1 L153.6,44.7 L161.4,30.1 L169.2,18.8 L177.0,14.0 L184.8,14.0 L192.6,14.0 L200.4,14.0 L208.2,14.0 L216.1,14.0 L223.9,14.0 L231.7,14.0 L239.5,14.0 L247.3,14.0 L255.1,14.0 L262.9,14.0 L270.8,14.0 L278.6,14.0 L286.4,14.0 L294.2,14.0 L302.0,14.0 L309.8,14.0 L317.6,14.0 L325.4,14.0 L333.2,14.0 L341.1,14.0 L348.9,14.0 L356.7,14.0 L364.5,14.0 L372.3,14.0 L380.1,14.0 L387.9,14.0 L395.8,14.0 L403.6,14.0 L411.4,14.0 L419.2,14.0 L427.0,14.0 L434.8,14.0 L442.6,14.0 L450.4,14.0 L458.2,14.0 L466.1,14.0 L473.9,14.0 L481.7,14.0 L489.5,14.0 L497.3,14.0 L505.1,14.0 L512.9,14.0 L520.8,14.0 L528.6,14.0 L536.4,14.0 L544.2,14.0 L552.0,14.0" class="series" style="stroke: var(--t3); stroke-width: 2"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,256.0 L91.1,256.0 L98.9,256.0 L106.7,256.0 L114.5,256.0 L122.3,252.8 L130.1,247.9 L137.9,244.7 L145.8,238.3 L153.6,227.0 L161.4,202.8 L169.2,164.0 L177.0,89.8 L184.8,20.5 L192.6,18.8 L200.4,18.8 L208.2,18.8 L216.1,18.8 L223.9,18.8 L231.7,18.8 L239.5,18.8 L247.3,18.8 L255.1,18.8 L262.9,18.8 L270.8,18.8 L278.6,18.8 L286.4,18.8 L294.2,18.8 L302.0,18.8 L309.8,18.8 L317.6,18.8 L325.4,18.8 L333.2,18.8 L341.1,18.8 L348.9,18.8 L356.7,18.8 L364.5,18.8 L372.3,18.8 L380.1,18.8 L387.9,18.8 L395.8,18.8 L403.6,18.8 L411.4,18.8 L419.2,18.8 L427.0,18.8 L434.8,18.8 L442.6,18.8 L450.4,18.8 L458.2,18.8 L466.1,18.8 L473.9,18.8 L481.7,18.8 L489.5,18.8 L497.3,18.8 L505.1,18.8 L512.9,18.8 L520.8,18.8 L528.6,18.8 L536.4,18.8 L544.2,18.8 L552.0,18.8" class="series" style="stroke: var(--t4); stroke-width: 2"/>
+<path d="M52.0,256.0 L59.8,256.0 L67.6,256.0 L75.4,256.0 L83.2,256.0 L91.1,256.0 L98.9,256.0 L106.7,256.0 L114.5,256.0 L122.3,256.0 L130.1,256.0 L137.9,252.8 L145.8,246.3 L153.6,246.3 L161.4,246.3 L169.2,246.3 L177.0,210.8 L184.8,170.5 L192.6,141.5 L200.4,128.5 L208.2,107.6 L216.1,101.1 L223.9,97.9 L231.7,101.1 L239.5,106.0 L247.3,110.8 L255.1,110.8 L262.9,114.0 L270.8,114.0 L278.6,117.3 L286.4,117.3 L294.2,117.3 L302.0,118.9 L309.8,118.9 L317.6,118.9 L325.4,120.5 L333.2,120.5 L341.1,120.5 L348.9,120.5 L356.7,122.1 L364.5,122.1 L372.3,122.1 L380.1,125.3 L387.9,125.3 L395.8,126.9 L403.6,130.2 L411.4,133.4 L419.2,135.0 L427.0,136.6 L434.8,141.5 L442.6,143.1 L450.4,144.7 L458.2,147.9 L466.1,147.9 L473.9,151.1 L481.7,152.7 L489.5,154.4 L497.3,156.0 L505.1,157.6 L512.9,159.2 L520.8,159.2 L528.6,160.8 L536.4,162.4 L544.2,162.4 L552.0,162.4" class="series" style="stroke: var(--t5); stroke-width: 2"/>
+<line x1="556" x2="570" y1="14.0" y2="14.0" style="stroke: var(--t2); stroke-width: 2.6"/>
+<text x="575" y="18.0" class="direct">11–13</text>
+<line x1="556" x2="570" y1="28.0" y2="28.0" style="stroke: var(--t3); stroke-width: 2.6"/>
+<text x="575" y="32.0" class="direct">14–18</text>
+<line x1="556" x2="570" y1="42.0" y2="42.0" style="stroke: var(--t1); stroke-width: 2.6"/>
+<text x="575" y="46.0" class="direct">1–10 digits</text>
+<line x1="556" x2="570" y1="56.0" y2="56.0" style="stroke: var(--t4); stroke-width: 2.6"/>
+<text x="575" y="60.0" class="direct">19–21</text>
+<line x1="556" x2="570" y1="162.4" y2="162.4" style="stroke: var(--t5); stroke-width: 2.6"/>
+<text x="575" y="166.4" class="direct">24–26</text>
+</svg>
+  <p class="fig-cap">v23, 150 random problems per length set.</p>
+  <p>The shorter lengths now hold flat to round 64, and the answer arrives earlier (mean round 11.4, against 16.3; on 1&ndash;10 digit problems round 7 against 14). The state still drifts at about the same rate; it just does not reach a decision boundary. The cost is real. On the 24&ndash;26 digit set v23 is <strong>worse</strong> than v22 (64.5% against 77.3%), and still falls with extra rounds. A model that converges fast and holds is a model that holds a wrong answer if a long carry has not finished.</p>
+  <p>v33 combines that training with an 80-round budget and operands up to 64 digits:</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="Accuracy against number of combiner rounds for v33, by problem length">
+<rect x="385.3" y="14" width="166.7" height="242" class="shade"/>
+<text x="389.3" y="26" class="tick shade-label">past the trained 80 rounds</text>
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="195.5" y2="195.5" class="grid"/>
+<text x="44" y="199.5" class="tick" text-anchor="end">25%</text>
+<line x1="52" x2="552" y1="135.0" y2="135.0" class="grid"/>
+<text x="44" y="139.0" class="tick" text-anchor="end">50%</text>
+<line x1="52" x2="552" y1="74.5" y2="74.5" class="grid"/>
+<text x="44" y="78.5" class="tick" text-anchor="end">75%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">100%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">0</text>
+<text x="135.3" y="274" class="tick" text-anchor="middle">20</text>
+<text x="218.7" y="274" class="tick" text-anchor="middle">40</text>
+<text x="302.0" y="274" class="tick" text-anchor="middle">60</text>
+<text x="385.3" y="274" class="tick" text-anchor="middle">80</text>
+<text x="468.7" y="274" class="tick" text-anchor="middle">100</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">120</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">rounds of the combiner block</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">exact-match accuracy</text>
+<line x1="385.3" x2="385.3" y1="14" y2="256" class="ref"/>
+<path d="M52.0,256.0 L56.2,256.0 L60.3,256.0 L64.5,252.0 L68.7,247.9 L72.8,243.9 L77.0,243.9 L81.2,235.8 L85.3,227.8 L89.5,179.4 L93.7,139.0 L97.8,90.6 L102.0,70.5 L106.2,58.4 L110.3,34.2 L114.5,18.0 L118.7,14.0 L122.8,14.0 L127.0,14.0 L131.2,14.0 L135.3,14.0 L139.5,14.0 L143.7,14.0 L147.8,14.0 L152.0,14.0 L156.2,14.0 L160.3,14.0 L164.5,14.0 L168.7,14.0 L172.8,14.0 L177.0,14.0 L181.2,14.0 L185.3,14.0 L189.5,14.0 L193.7,14.0 L197.8,14.0 L202.0,14.0 L206.2,14.0 L210.3,14.0 L214.5,14.0 L218.7,14.0 L222.8,14.0 L227.0,14.0 L231.2,14.0 L235.3,14.0 L239.5,14.0 L243.7,14.0 L247.8,14.0 L252.0,14.0 L256.2,14.0 L260.3,14.0 L264.5,14.0 L268.7,14.0 L272.8,14.0 L277.0,14.0 L281.2,14.0 L285.3,14.0 L289.5,14.0 L293.7,14.0 L297.8,14.0 L302.0,14.0 L306.2,14.0 L310.3,14.0 L314.5,14.0 L318.7,14.0 L322.8,14.0 L327.0,14.0 L331.2,14.0 L335.3,14.0 L339.5,14.0 L343.7,14.0 L347.8,14.0 L352.0,14.0 L356.2,14.0 L360.3,14.0 L364.5,14.0 L368.7,14.0 L372.8,14.0 L377.0,14.0 L381.2,14.0 L385.3,14.0 L389.5,14.0 L393.7,14.0 L397.8,14.0 L402.0,14.0 L406.2,14.0 L410.3,14.0 L414.5,14.0 L418.7,14.0 L422.8,14.0 L427.0,14.0 L431.2,14.0 L435.3,14.0 L439.5,14.0 L443.7,14.0 L447.8,14.0 L452.0,14.0 L456.2,14.0 L460.3,14.0 L464.5,14.0 L468.7,14.0 L472.8,14.0 L477.0,14.0 L481.2,14.0 L485.3,14.0 L489.5,14.0 L493.7,14.0 L497.8,14.0 L502.0,14.0 L506.2,14.0 L510.3,14.0 L514.5,14.0 L518.7,14.0 L522.8,14.0 L527.0,14.0 L531.2,14.0 L535.3,14.0 L539.5,14.0 L543.7,14.0 L547.8,14.0 L552.0,14.0" class="series" style="stroke: var(--t1); stroke-width: 2"/>
+<path d="M52.0,256.0 L56.2,256.0 L60.3,256.0 L64.5,256.0 L68.7,256.0 L72.8,256.0 L77.0,256.0 L81.2,256.0 L85.3,256.0 L89.5,256.0 L93.7,243.9 L97.8,227.8 L102.0,199.5 L106.2,155.2 L110.3,118.9 L114.5,82.6 L118.7,46.3 L122.8,34.2 L127.0,22.1 L131.2,22.1 L135.3,18.0 L139.5,18.0 L143.7,18.0 L147.8,14.0 L152.0,14.0 L156.2,14.0 L160.3,14.0 L164.5,14.0 L168.7,14.0 L172.8,14.0 L177.0,14.0 L181.2,14.0 L185.3,14.0 L189.5,14.0 L193.7,14.0 L197.8,14.0 L202.0,14.0 L206.2,14.0 L210.3,14.0 L214.5,14.0 L218.7,14.0 L222.8,14.0 L227.0,14.0 L231.2,14.0 L235.3,14.0 L239.5,14.0 L243.7,14.0 L247.8,14.0 L252.0,14.0 L256.2,14.0 L260.3,14.0 L264.5,14.0 L268.7,14.0 L272.8,14.0 L277.0,14.0 L281.2,14.0 L285.3,14.0 L289.5,14.0 L293.7,14.0 L297.8,14.0 L302.0,14.0 L306.2,14.0 L310.3,14.0 L314.5,14.0 L318.7,14.0 L322.8,14.0 L327.0,14.0 L331.2,14.0 L335.3,14.0 L339.5,14.0 L343.7,14.0 L347.8,14.0 L352.0,14.0 L356.2,14.0 L360.3,14.0 L364.5,14.0 L368.7,14.0 L372.8,14.0 L377.0,14.0 L381.2,14.0 L385.3,14.0 L389.5,14.0 L393.7,14.0 L397.8,14.0 L402.0,14.0 L406.2,14.0 L410.3,14.0 L414.5,14.0 L418.7,14.0 L422.8,14.0 L427.0,14.0 L431.2,14.0 L435.3,14.0 L439.5,14.0 L443.7,14.0 L447.8,14.0 L452.0,14.0 L456.2,14.0 L460.3,14.0 L464.5,14.0 L468.7,14.0 L472.8,14.0 L477.0,14.0 L481.2,14.0 L485.3,14.0 L489.5,14.0 L493.7,14.0 L497.8,14.0 L502.0,14.0 L506.2,14.0 L510.3,14.0 L514.5,14.0 L518.7,14.0 L522.8,14.0 L527.0,14.0 L531.2,14.0 L535.3,14.0 L539.5,14.0 L543.7,14.0 L547.8,14.0 L552.0,14.0" class="series" style="stroke: var(--t2); stroke-width: 2"/>
+<path d="M52.0,256.0 L56.2,256.0 L60.3,256.0 L64.5,256.0 L68.7,256.0 L72.8,256.0 L77.0,256.0 L81.2,256.0 L85.3,256.0 L89.5,256.0 L93.7,256.0 L97.8,252.0 L102.0,252.0 L106.2,239.9 L110.3,187.4 L114.5,131.0 L118.7,90.6 L122.8,58.4 L127.0,34.2 L131.2,14.0 L135.3,14.0 L139.5,14.0 L143.7,14.0 L147.8,14.0 L152.0,14.0 L156.2,14.0 L160.3,14.0 L164.5,14.0 L168.7,14.0 L172.8,14.0 L177.0,14.0 L181.2,14.0 L185.3,14.0 L189.5,14.0 L193.7,14.0 L197.8,14.0 L202.0,14.0 L206.2,14.0 L210.3,14.0 L214.5,14.0 L218.7,14.0 L222.8,14.0 L227.0,14.0 L231.2,14.0 L235.3,14.0 L239.5,14.0 L243.7,14.0 L247.8,14.0 L252.0,14.0 L256.2,14.0 L260.3,14.0 L264.5,14.0 L268.7,14.0 L272.8,14.0 L277.0,14.0 L281.2,14.0 L285.3,14.0 L289.5,14.0 L293.7,14.0 L297.8,14.0 L302.0,14.0 L306.2,14.0 L310.3,14.0 L314.5,14.0 L318.7,14.0 L322.8,14.0 L327.0,14.0 L331.2,14.0 L335.3,14.0 L339.5,14.0 L343.7,14.0 L347.8,14.0 L352.0,14.0 L356.2,14.0 L360.3,14.0 L364.5,14.0 L368.7,14.0 L372.8,14.0 L377.0,14.0 L381.2,14.0 L385.3,14.0 L389.5,14.0 L393.7,14.0 L397.8,14.0 L402.0,14.0 L406.2,14.0 L410.3,14.0 L414.5,14.0 L418.7,14.0 L422.8,14.0 L427.0,14.0 L431.2,14.0 L435.3,14.0 L439.5,14.0 L443.7,14.0 L447.8,14.0 L452.0,14.0 L456.2,14.0 L460.3,14.0 L464.5,14.0 L468.7,14.0 L472.8,14.0 L477.0,14.0 L481.2,14.0 L485.3,14.0 L489.5,14.0 L493.7,14.0 L497.8,14.0 L502.0,14.0 L506.2,14.0 L510.3,14.0 L514.5,14.0 L518.7,14.0 L522.8,14.0 L527.0,14.0 L531.2,14.0 L535.3,14.0 L539.5,14.0 L543.7,14.0 L547.8,14.0 L552.0,14.0" class="series" style="stroke: var(--t3); stroke-width: 2"/>
+<path d="M52.0,256.0 L56.2,256.0 L60.3,256.0 L64.5,256.0 L68.7,256.0 L72.8,256.0 L77.0,256.0 L81.2,256.0 L85.3,256.0 L89.5,256.0 L93.7,256.0 L97.8,256.0 L102.0,256.0 L106.2,252.0 L110.3,247.9 L114.5,223.7 L118.7,203.6 L122.8,151.1 L127.0,90.6 L131.2,66.4 L135.3,50.3 L139.5,22.1 L143.7,18.0 L147.8,14.0 L152.0,14.0 L156.2,14.0 L160.3,14.0 L164.5,14.0 L168.7,14.0 L172.8,14.0 L177.0,14.0 L181.2,14.0 L185.3,14.0 L189.5,14.0 L193.7,14.0 L197.8,14.0 L202.0,14.0 L206.2,14.0 L210.3,14.0 L214.5,14.0 L218.7,14.0 L222.8,14.0 L227.0,14.0 L231.2,14.0 L235.3,14.0 L239.5,14.0 L243.7,14.0 L247.8,14.0 L252.0,14.0 L256.2,14.0 L260.3,14.0 L264.5,14.0 L268.7,14.0 L272.8,14.0 L277.0,14.0 L281.2,14.0 L285.3,14.0 L289.5,14.0 L293.7,14.0 L297.8,14.0 L302.0,14.0 L306.2,14.0 L310.3,14.0 L314.5,14.0 L318.7,14.0 L322.8,14.0 L327.0,14.0 L331.2,14.0 L335.3,14.0 L339.5,14.0 L343.7,14.0 L347.8,14.0 L352.0,14.0 L356.2,14.0 L360.3,14.0 L364.5,14.0 L368.7,14.0 L372.8,14.0 L377.0,14.0 L381.2,14.0 L385.3,14.0 L389.5,14.0 L393.7,14.0 L397.8,14.0 L402.0,14.0 L406.2,14.0 L410.3,14.0 L414.5,14.0 L418.7,14.0 L422.8,14.0 L427.0,14.0 L431.2,14.0 L435.3,14.0 L439.5,14.0 L443.7,14.0 L447.8,14.0 L452.0,14.0 L456.2,14.0 L460.3,14.0 L464.5,14.0 L468.7,14.0 L472.8,14.0 L477.0,14.0 L481.2,14.0 L485.3,14.0 L489.5,14.0 L493.7,14.0 L497.8,14.0 L502.0,14.0 L506.2,14.0 L510.3,14.0 L514.5,14.0 L518.7,14.0 L522.8,14.0 L527.0,14.0 L531.2,14.0 L535.3,14.0 L539.5,14.0 L543.7,14.0 L547.8,14.0 L552.0,14.0" class="series" style="stroke: var(--t4); stroke-width: 2"/>
+<path d="M52.0,256.0 L56.2,256.0 L60.3,256.0 L64.5,256.0 L68.7,256.0 L72.8,256.0 L77.0,256.0 L81.2,256.0 L85.3,256.0 L89.5,256.0 L93.7,256.0 L97.8,256.0 L102.0,256.0 L106.2,252.0 L110.3,231.8 L114.5,207.6 L118.7,183.4 L122.8,151.1 L127.0,106.8 L131.2,62.4 L135.3,30.1 L139.5,18.0 L143.7,14.0 L147.8,14.0 L152.0,14.0 L156.2,14.0 L160.3,14.0 L164.5,14.0 L168.7,14.0 L172.8,14.0 L177.0,14.0 L181.2,14.0 L185.3,14.0 L189.5,14.0 L193.7,14.0 L197.8,14.0 L202.0,14.0 L206.2,14.0 L210.3,14.0 L214.5,14.0 L218.7,14.0 L222.8,14.0 L227.0,14.0 L231.2,14.0 L235.3,14.0 L239.5,14.0 L243.7,14.0 L247.8,14.0 L252.0,14.0 L256.2,14.0 L260.3,14.0 L264.5,14.0 L268.7,14.0 L272.8,14.0 L277.0,14.0 L281.2,14.0 L285.3,14.0 L289.5,14.0 L293.7,14.0 L297.8,14.0 L302.0,14.0 L306.2,14.0 L310.3,14.0 L314.5,14.0 L318.7,14.0 L322.8,14.0 L327.0,14.0 L331.2,14.0 L335.3,14.0 L339.5,14.0 L343.7,14.0 L347.8,14.0 L352.0,14.0 L356.2,14.0 L360.3,14.0 L364.5,14.0 L368.7,14.0 L372.8,14.0 L377.0,14.0 L381.2,14.0 L385.3,14.0 L389.5,14.0 L393.7,14.0 L397.8,14.0 L402.0,14.0 L406.2,14.0 L410.3,14.0 L414.5,14.0 L418.7,14.0 L422.8,14.0 L427.0,14.0 L431.2,14.0 L435.3,14.0 L439.5,14.0 L443.7,14.0 L447.8,14.0 L452.0,14.0 L456.2,14.0 L460.3,14.0 L464.5,14.0 L468.7,14.0 L472.8,14.0 L477.0,14.0 L481.2,14.0 L485.3,14.0 L489.5,14.0 L493.7,14.0 L497.8,14.0 L502.0,14.0 L506.2,14.0 L510.3,14.0 L514.5,14.0 L518.7,14.0 L522.8,14.0 L527.0,14.0 L531.2,14.0 L535.3,14.0 L539.5,14.0 L543.7,14.0 L547.8,14.0 L552.0,14.0" class="series" style="stroke: var(--t5); stroke-width: 2"/>
+<line x1="556" x2="570" y1="14.0" y2="14.0" style="stroke: var(--t2); stroke-width: 2.6"/>
+<text x="575" y="18.0" class="direct">11–13</text>
+<line x1="556" x2="570" y1="28.0" y2="28.0" style="stroke: var(--t3); stroke-width: 2.6"/>
+<text x="575" y="32.0" class="direct">14–18</text>
+<line x1="556" x2="570" y1="42.0" y2="42.0" style="stroke: var(--t4); stroke-width: 2.6"/>
+<text x="575" y="46.0" class="direct">19–21</text>
+<line x1="556" x2="570" y1="56.0" y2="56.0" style="stroke: var(--t1); stroke-width: 2.6"/>
+<text x="575" y="60.0" class="direct">1–10 digits</text>
+<line x1="556" x2="570" y1="70.0" y2="70.0" style="stroke: var(--t5); stroke-width: 2.6"/>
+<text x="575" y="74.0" class="direct">24–26</text>
+</svg>
+  <p class="fig-cap">v33, 60 random problems per length set, run to 120 rounds. All five length sets are at 100% on this sample from the round they first reach 99% (round 16&ndash;23) to round 120.</p>
+  <div class="table-wrap"><table class="compact"><caption>Accuracy at the trained round budget, then 40 rounds later</caption><thead><tr><th></th><th>v22 @24</th><th>@64</th><th>v23 @24</th><th>@64</th><th>v33 @80</th><th>@120</th></tr></thead><tbody><tr><td>1–10 digits</td><td><span class="hi">100%</span></td><td>95%</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>11–13</td><td><span class="hi">100%</span></td><td>93%</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>14–18</td><td><span class="hi">100%</span></td><td>81%</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>19–21</td><td>97%</td><td>59%</td><td>98%</td><td>98%</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>24–26</td><td>79%</td><td><span class="lo">6%</span></td><td>62%</td><td><span class="lo">39%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr class="split"><td>problems per length</td><td>150</td><td>150</td><td>150</td><td>150</td><td>60</td><td>60</td></tr></tbody></table></div>
+  <p class="fig-cap">Every model run 40 rounds past its budget. v33 is the only one that is flat on all five.</p>
+  <p>It is exact on the 24&ndash;26 digit set (100% of 600, against 77.3% for v22) and trades a sliver of the shorter sets for it (99.8% on 1&ndash;10 digits). Two cautions belong here. First, v33 differs from v23 in three ways at once: more rounds, longer training problems, and 128 instead of 30 place slots. v23 alone shows that variable round counts do not by themselves fix the 24&ndash;26 digit set; I did not run the other additions on their own, so I cannot say which of them is needed. Second, those 24&ndash;26 digit problems are inside what v33 was trained on. Whether they are &ldquo;extrapolation&rdquo; is the next section.</p>
+  <div class="table-wrap"><table><caption>The 24–26 digit set, by length (200 problems each)</caption><thead><tr><th></th><th>v22</th><th>v23</th><th>v33</th></tr></thead><tbody><tr><td>24 digits</td><td>99.0%</td><td>94.0%</td><td><span class="hi">100%</span></td></tr><tr><td>25 digits</td><td>80.5%</td><td>68.5%</td><td><span class="hi">100%</span></td></tr><tr><td>26 digits</td><td>52.5%</td><td><span class="lo">31.0%</span></td><td><span class="hi">100%</span></td></tr></tbody></table></div>
+
+  <div class="ledger"></div>
+
+  <h2>Where the fix runs out</h2>
+  <p>Carry the One says that raising the training range moves the wall rather than removing it: v33, trained to 64 digits, is exact through 26 only because 26 is inside its range. Here is the direct test. I generated fresh problems at lengths from 24 to 124 digits (the model has 128 place slots), 200 per length, random and carry-heavy.</p>
+  <svg class="chart" viewBox="0 0 680 300" role="img" aria-label="v33 accuracy against problem length, 80 and 140 rounds">
+<rect x="252.0" y="14" width="300.0" height="242" class="shade"/>
+<text x="256.0" y="26" class="tick shade-label">past the longest training problem</text>
+<line x1="52" x2="552" y1="256.0" y2="256.0" class="grid"/>
+<text x="44" y="260.0" class="tick" text-anchor="end">0%</text>
+<line x1="52" x2="552" y1="195.5" y2="195.5" class="grid"/>
+<text x="44" y="199.5" class="tick" text-anchor="end">25%</text>
+<line x1="52" x2="552" y1="135.0" y2="135.0" class="grid"/>
+<text x="44" y="139.0" class="tick" text-anchor="end">50%</text>
+<line x1="52" x2="552" y1="74.5" y2="74.5" class="grid"/>
+<text x="44" y="78.5" class="tick" text-anchor="end">75%</text>
+<line x1="52" x2="552" y1="14.0" y2="14.0" class="grid"/>
+<text x="44" y="18.0" class="tick" text-anchor="end">100%</text>
+<text x="52.0" y="274" class="tick" text-anchor="middle">24</text>
+<text x="172.0" y="274" class="tick" text-anchor="middle">48</text>
+<text x="252.0" y="274" class="tick" text-anchor="middle">64</text>
+<text x="332.0" y="274" class="tick" text-anchor="middle">80</text>
+<text x="412.0" y="274" class="tick" text-anchor="middle">96</text>
+<text x="492.0" y="274" class="tick" text-anchor="middle">112</text>
+<text x="552.0" y="274" class="tick" text-anchor="middle">124</text>
+<line x1="52" x2="552" y1="256" y2="256" class="axis"/>
+<text x="302.0" y="294" class="axis-label" text-anchor="middle">digits in the longer operand</text>
+<text x="14" y="135.0" class="axis-label" text-anchor="middle" transform="rotate(-90 14 135.0)">exact-match accuracy</text>
+<line x1="252.0" x2="252.0" y1="14" y2="256" class="ref"/>
+<path d="M52.0,14.0 L62.0,14.0 L72.0,15.2 L82.0,14.0 L92.0,14.0 L112.0,14.0 L132.0,14.0 L152.0,15.2 L172.0,14.0 L192.0,14.0 L212.0,15.2 L232.0,14.0 L252.0,15.2 L292.0,16.4 L332.0,75.7 L412.0,119.3 L492.0,168.9 L552.0,213.6" class="series" style="stroke: var(--s1); stroke-width: 2"/>
+<circle cx="52.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="62.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="72.0" cy="15.2" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="82.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="92.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="112.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="132.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="152.0" cy="15.2" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="172.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="192.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="212.0" cy="15.2" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="232.0" cy="14.0" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="252.0" cy="15.2" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="292.0" cy="16.4" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="332.0" cy="75.7" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="412.0" cy="119.3" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="492.0" cy="168.9" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="552.0" cy="213.6" r="4" class="dot" style="fill: var(--s1)"/>
+<circle cx="52.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 24 &#8594; 100%</title></circle>
+<circle cx="62.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 26 &#8594; 100%</title></circle>
+<circle cx="72.0" cy="15.2" r="7" class="hit"><title>natural, 80 rounds: 28 &#8594; 100%</title></circle>
+<circle cx="82.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 30 &#8594; 100%</title></circle>
+<circle cx="92.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 32 &#8594; 100%</title></circle>
+<circle cx="112.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 36 &#8594; 100%</title></circle>
+<circle cx="132.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 40 &#8594; 100%</title></circle>
+<circle cx="152.0" cy="15.2" r="7" class="hit"><title>natural, 80 rounds: 44 &#8594; 100%</title></circle>
+<circle cx="172.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 48 &#8594; 100%</title></circle>
+<circle cx="192.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 52 &#8594; 100%</title></circle>
+<circle cx="212.0" cy="15.2" r="7" class="hit"><title>natural, 80 rounds: 56 &#8594; 100%</title></circle>
+<circle cx="232.0" cy="14.0" r="7" class="hit"><title>natural, 80 rounds: 60 &#8594; 100%</title></circle>
+<circle cx="252.0" cy="15.2" r="7" class="hit"><title>natural, 80 rounds: 64 &#8594; 100%</title></circle>
+<circle cx="292.0" cy="16.4" r="7" class="hit"><title>natural, 80 rounds: 72 &#8594; 99%</title></circle>
+<circle cx="332.0" cy="75.7" r="7" class="hit"><title>natural, 80 rounds: 80 &#8594; 74%</title></circle>
+<circle cx="412.0" cy="119.3" r="7" class="hit"><title>natural, 80 rounds: 96 &#8594; 56%</title></circle>
+<circle cx="492.0" cy="168.9" r="7" class="hit"><title>natural, 80 rounds: 112 &#8594; 36%</title></circle>
+<circle cx="552.0" cy="213.6" r="7" class="hit"><title>natural, 80 rounds: 124 &#8594; 18%</title></circle>
+<path d="M52.0,14.0 L62.0,14.0 L72.0,14.0 L82.0,14.0 L92.0,14.0 L112.0,14.0 L132.0,14.0 L152.0,14.0 L172.0,15.2 L192.0,14.0 L212.0,14.0 L232.0,14.0 L252.0,14.0 L292.0,15.2 L332.0,75.7 L412.0,125.3 L492.0,242.7 L552.0,252.4" class="series" style="stroke: var(--s2); stroke-width: 2"/>
+<circle cx="52.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="62.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="72.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="82.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="92.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="112.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="132.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="152.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="172.0" cy="15.2" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="192.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="212.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="232.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="252.0" cy="14.0" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="292.0" cy="15.2" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="332.0" cy="75.7" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="412.0" cy="125.3" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="492.0" cy="242.7" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="552.0" cy="252.4" r="4" class="dot" style="fill: var(--s2)"/>
+<circle cx="52.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 24 &#8594; 100%</title></circle>
+<circle cx="62.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 26 &#8594; 100%</title></circle>
+<circle cx="72.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 28 &#8594; 100%</title></circle>
+<circle cx="82.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 30 &#8594; 100%</title></circle>
+<circle cx="92.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 32 &#8594; 100%</title></circle>
+<circle cx="112.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 36 &#8594; 100%</title></circle>
+<circle cx="132.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 40 &#8594; 100%</title></circle>
+<circle cx="152.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 44 &#8594; 100%</title></circle>
+<circle cx="172.0" cy="15.2" r="7" class="hit"><title>carry-heavy, 80 rounds: 48 &#8594; 100%</title></circle>
+<circle cx="192.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 52 &#8594; 100%</title></circle>
+<circle cx="212.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 56 &#8594; 100%</title></circle>
+<circle cx="232.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 60 &#8594; 100%</title></circle>
+<circle cx="252.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 80 rounds: 64 &#8594; 100%</title></circle>
+<circle cx="292.0" cy="15.2" r="7" class="hit"><title>carry-heavy, 80 rounds: 72 &#8594; 100%</title></circle>
+<circle cx="332.0" cy="75.7" r="7" class="hit"><title>carry-heavy, 80 rounds: 80 &#8594; 74%</title></circle>
+<circle cx="412.0" cy="125.3" r="7" class="hit"><title>carry-heavy, 80 rounds: 96 &#8594; 54%</title></circle>
+<circle cx="492.0" cy="242.7" r="7" class="hit"><title>carry-heavy, 80 rounds: 112 &#8594; 6%</title></circle>
+<circle cx="552.0" cy="252.4" r="7" class="hit"><title>carry-heavy, 80 rounds: 124 &#8594; 2%</title></circle>
+<path d="M52.0,14.0 L62.0,14.0 L72.0,15.2 L82.0,14.0 L92.0,14.0 L112.0,14.0 L132.0,14.0 L152.0,15.2 L172.0,14.0 L192.0,14.0 L212.0,15.2 L232.0,14.0 L252.0,15.2 L292.0,16.4 L332.0,76.9 L412.0,119.3 L492.0,172.5 L552.0,212.4" class="series" style="stroke: var(--s1); stroke-width: 3; stroke-dasharray: 2 3"/>
+<circle cx="52.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 24 &#8594; 100%</title></circle>
+<circle cx="62.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 26 &#8594; 100%</title></circle>
+<circle cx="72.0" cy="15.2" r="7" class="hit"><title>natural, 140 rounds: 28 &#8594; 100%</title></circle>
+<circle cx="82.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 30 &#8594; 100%</title></circle>
+<circle cx="92.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 32 &#8594; 100%</title></circle>
+<circle cx="112.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 36 &#8594; 100%</title></circle>
+<circle cx="132.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 40 &#8594; 100%</title></circle>
+<circle cx="152.0" cy="15.2" r="7" class="hit"><title>natural, 140 rounds: 44 &#8594; 100%</title></circle>
+<circle cx="172.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 48 &#8594; 100%</title></circle>
+<circle cx="192.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 52 &#8594; 100%</title></circle>
+<circle cx="212.0" cy="15.2" r="7" class="hit"><title>natural, 140 rounds: 56 &#8594; 100%</title></circle>
+<circle cx="232.0" cy="14.0" r="7" class="hit"><title>natural, 140 rounds: 60 &#8594; 100%</title></circle>
+<circle cx="252.0" cy="15.2" r="7" class="hit"><title>natural, 140 rounds: 64 &#8594; 100%</title></circle>
+<circle cx="292.0" cy="16.4" r="7" class="hit"><title>natural, 140 rounds: 72 &#8594; 99%</title></circle>
+<circle cx="332.0" cy="76.9" r="7" class="hit"><title>natural, 140 rounds: 80 &#8594; 74%</title></circle>
+<circle cx="412.0" cy="119.3" r="7" class="hit"><title>natural, 140 rounds: 96 &#8594; 56%</title></circle>
+<circle cx="492.0" cy="172.5" r="7" class="hit"><title>natural, 140 rounds: 112 &#8594; 34%</title></circle>
+<circle cx="552.0" cy="212.4" r="7" class="hit"><title>natural, 140 rounds: 124 &#8594; 18%</title></circle>
+<path d="M52.0,14.0 L62.0,14.0 L72.0,14.0 L82.0,14.0 L92.0,14.0 L112.0,14.0 L132.0,14.0 L152.0,14.0 L172.0,15.2 L192.0,14.0 L212.0,14.0 L232.0,14.0 L252.0,14.0 L292.0,15.2 L332.0,73.3 L412.0,121.7 L492.0,243.9 L552.0,252.4" class="series" style="stroke: var(--s2); stroke-width: 3; stroke-dasharray: 2 3"/>
+<circle cx="52.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 24 &#8594; 100%</title></circle>
+<circle cx="62.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 26 &#8594; 100%</title></circle>
+<circle cx="72.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 28 &#8594; 100%</title></circle>
+<circle cx="82.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 30 &#8594; 100%</title></circle>
+<circle cx="92.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 32 &#8594; 100%</title></circle>
+<circle cx="112.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 36 &#8594; 100%</title></circle>
+<circle cx="132.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 40 &#8594; 100%</title></circle>
+<circle cx="152.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 44 &#8594; 100%</title></circle>
+<circle cx="172.0" cy="15.2" r="7" class="hit"><title>carry-heavy, 140 rounds: 48 &#8594; 100%</title></circle>
+<circle cx="192.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 52 &#8594; 100%</title></circle>
+<circle cx="212.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 56 &#8594; 100%</title></circle>
+<circle cx="232.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 60 &#8594; 100%</title></circle>
+<circle cx="252.0" cy="14.0" r="7" class="hit"><title>carry-heavy, 140 rounds: 64 &#8594; 100%</title></circle>
+<circle cx="292.0" cy="15.2" r="7" class="hit"><title>carry-heavy, 140 rounds: 72 &#8594; 100%</title></circle>
+<circle cx="332.0" cy="73.3" r="7" class="hit"><title>carry-heavy, 140 rounds: 80 &#8594; 76%</title></circle>
+<circle cx="412.0" cy="121.7" r="7" class="hit"><title>carry-heavy, 140 rounds: 96 &#8594; 56%</title></circle>
+<circle cx="492.0" cy="243.9" r="7" class="hit"><title>carry-heavy, 140 rounds: 112 &#8594; 5%</title></circle>
+<circle cx="552.0" cy="252.4" r="7" class="hit"><title>carry-heavy, 140 rounds: 124 &#8594; 2%</title></circle>
+<line x1="556" x2="570" y1="212.0" y2="212.0" style="stroke: var(--s1); stroke-width: 2.6; stroke-dasharray: 2 3"/>
+<text x="575" y="216.0" class="direct">random, 140</text>
+<line x1="556" x2="570" y1="226.0" y2="226.0" style="stroke: var(--s1); stroke-width: 2.6"/>
+<text x="575" y="230.0" class="direct">random</text>
+<line x1="556" x2="570" y1="240.0" y2="240.0" style="stroke: var(--s2); stroke-width: 2.6"/>
+<text x="575" y="244.0" class="direct">carry-heavy</text>
+<line x1="556" x2="570" y1="254.0" y2="254.0" style="stroke: var(--s2); stroke-width: 2.6; stroke-dasharray: 2 3"/>
+<text x="575" y="258.0" class="direct">carry-heavy, 140</text>
+</svg>
+  <p class="fig-cap">v33. Dotted lines are the same model run for 140 rounds instead of 80; they sit on top of the solid ones.</p>
+  <div class="table-wrap"><table><caption>v33, 200 problems per row (the longer operand has this many digits)</caption><thead><tr><th>digits</th><th>random, 80 rounds</th><th>carry-heavy, 80</th><th>random, 140</th><th>carry-heavy, 140</th></tr></thead><tbody><tr><td>24</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>26</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>28</td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td></tr><tr><td>30</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>32</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>36</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>40</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>44</td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td></tr><tr><td>48</td><td><span class="hi">100%</span></td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.5%</span></td></tr><tr><td>52</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>56</td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td></tr><tr><td>60</td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td><td><span class="hi">100%</span></td></tr><tr><td>64</td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td><td><span class="hi">99.5%</span></td><td><span class="hi">100%</span></td></tr><tr><td>72</td><td><span class="hi">99.0%</span></td><td><span class="hi">99.5%</span></td><td><span class="hi">99.0%</span></td><td><span class="hi">99.5%</span></td></tr><tr><td>80</td><td>74.5%</td><td>74.5%</td><td>74.0%</td><td>75.5%</td></tr><tr><td>96</td><td>56.5%</td><td>54.0%</td><td>56.5%</td><td>55.5%</td></tr><tr><td>112</td><td><span class="lo">36.0%</span></td><td><span class="lo">5.5%</span></td><td><span class="lo">34.5%</span></td><td><span class="lo">5.0%</span></td></tr><tr><td>124</td><td><span class="lo">17.5%</span></td><td><span class="lo">1.5%</span></td><td><span class="lo">18.0%</span></td><td><span class="lo">1.5%</span></td></tr></tbody></table></div>
+  <p>v33 is at 99.5% or better at its training limit of 64 digits, still at 99.0% (random) and 99.5% (carry-heavy) at 72, eight digits (12.5%) past it, and falls off after that: 74.5% at 80, 56.5% at 96. Random and carry-heavy problems fall together up to about 96 digits, so up to there this is length, not carries. Past it carry-heavy problems collapse much faster (5.5% against 36.0% at 112 digits).</p>
+  <p><strong>Giving the model 60 more rounds changes nothing</strong>: no length moves by more than 1.5 points. By round 80 the model has finished and then holds its answer, which for these lengths is wrong. The limit is not how long the block runs. It is how long a problem the model was trained on, which is the claim in Carry the One, now measured.</p>
+  <p>The same shape shows up in both models. v22 was trained to 20 digits and v33 to 64. In each, accuracy starts to break about a quarter past the longest training problem: v22 is 99.0% at 24 digits (+20%), 80.5% at 25 (+25%) and 52.5% at 26 (+30%); v33 is 99.0% at 72 (+12.5%) and 74.5% at 80 (+25%). Two models are a coincidence, not a law, but it is consistent with a model whose computation is sound and whose sense of &ldquo;how long a number can be&rdquo; ends where its training did. As a back-of-envelope, 74.5% exact on an 80-digit answer is about 99.6% per digit if errors were independent; the model is nearly right everywhere, and exact match is unforgiving at length.</p>
+
+  <h2>Limits</h2>
+  <ul>
+    <li>One task, one model family, <strong>one training run per checkpoint</strong>. No seed variation; the differences between v22, v23 and v33 are single runs.</li>
+    <li>The probes are small. Linear probes use 500 problems (150 held out) and a fixed ridge penalty, so their accuracies carry a few points of noise. The round-by-round accuracy curves use 150 problems per length set (60 for v33), enough for shapes, not for the third digit of any percentage. Early-round readouts apply a readout the model was not trained to be read at.</li>
+    <li>Attention is averaged over six heads, and I did not open the MLP. The &ldquo;scratch-token roles&rdquo; are read from ablations, attention and probes, not from a traced circuit.</li>
+    <li>The state-swap result is positive for one kind of swap (a whole place state, after round 10) and negative for two others. The negative results do not show the carry cannot be injected, only that these two ways failed.</li>
+    <li>The wavefront speed comes from one family of inputs (runs of 7&ndash;11 nines in a 14-digit number), and 27% of its unpatched controls were not decoded as a clean run of nines.</li>
+    <li>v33 changed three things at once from v22/v23, and the variable-round change was the only one run alone. I make no claim about which of the other two it needs.</li>
+    <li>For v33 the training script&rsquo;s own &ldquo;best checkpoint&rdquo; (by a clipped validation loss) stopped at iteration 3000 and did not track accuracy. Every v33 number here is from the final iteration-15,000 snapshot.</li>
+    <li>In <code>v33_dynamics.json</code> the keys <code>acc_at_24</code> and <code>acc_at_64</code> mean &ldquo;at the model&rsquo;s own round budget&rdquo; and &ldquo;at budget + 40&rdquo; (80 and 120 for v33). The charts and tables here are computed from the full per-round curves, not from those keys.</li>
+  </ul>
+
+  <h2>What I would try next</h2>
+  <p>All of this is untested. The training-length result suggests the model needs a reason not to treat the longest length it saw as the longest possible. Two ideas follow from the measurements. One is to remove the fixed ceiling: draw the maximum length per batch from a wide range, so no consistent &ldquo;answers stop here&rdquo; is ever learned. The other comes from the attention maps: only the next place down and the scratch tokens carry much attention, yet every place attends over every other place, so a place&rsquo;s share of attention to its neighbour could fall as numbers get longer. Within the lengths measured here (6 to 20 digits, v22) it does not obviously do so, but I have not measured it past the training length, which is the first thing to check. If it does fall, restricting the block to a local window plus the scratch tokens would make that share independent of length. A caution: in the single-token experiments of the companion post, restricting attention to a local band did not sharpen it, so I would not assume it carries over. A cleaner test of the training-length result is to vary the training maximum alone, holding everything else at v33.</p>
+
+  <div class="verdict">
+    <div class="note-label">Where this leaves things</div>
+    <h3>The block is doing sound arithmetic. It does not know when it should stop being right.</h3>
+    <p>Taking the model apart shows an algorithm anyone would recognise: each digit does its own sum, a carry moves up the number a place at a time, and the answer settles. It also shows why the model fails: a state that drifts if read too late, a round budget that is tight for the longest problems, and a training length that sets the edge of the numbers it trusts. One of those is fixed by a change in how it is trained. The edge moved with the training range, in both models; it did not go away.</p>
+  </div>
+
+  <h2>References</h2>
+  <ol class="refs">
+    <li>M. Dehghani et al., <em>Universal Transformers</em>, ICLR 2019 (arXiv 1807.03819). Repeating one block, which is what the combiner does.</li>
+    <li>S. Bai, J. Z. Kolter, V. Koltun, <em>Deep Equilibrium Models</em>, NeurIPS 2019 (arXiv 1909.01377). Solving for a fixed point instead of unrolling a fixed number of rounds.</li>
+    <li>N. Nanda et al., <em>Progress measures for grokking via mechanistic interpretability</em>, ICLR 2023 (arXiv 2301.05217). Taking apart a small transformer that adds.</li>
+    <li>K. Meng et al., <em>Locating and Editing Factual Associations in GPT</em>, NeurIPS 2022 (arXiv 2202.05262). Causal tracing, the state-swap idea.</li>
+    <li>F. Zhang, N. Nanda, <em>Towards Best Practices of Activation Patching in Language Models</em>, ICLR 2024 (arXiv 2309.16042).</li>
+    <li>H. Cho et al., <em>Position Coupling: Improving Length Generalization of Arithmetic Transformers Using Task Structure</em>, NeurIPS 2024 (arXiv 2405.20671). The other route to length generalization in addition.</li>
+  </ol>
+
+  <footer>
+    every number in this post comes from the result files in <a href="https://github.com/ljtyk/adder-mech-interp/tree/main/data">data/</a>; the code behind them is in <a href="https://github.com/ljtyk/adder-mech-interp/tree/main/code">code/</a>. companion posts: <a href="https://ljtyk.github.io/carry-the-one/">Carry the One</a> &middot; <a href="https://ljtyk.github.io/rope-aliasing/">Why Rotary Embeddings Stop Extrapolating</a>
+  </footer>
+
+</div>
+
+</body>
+</html>

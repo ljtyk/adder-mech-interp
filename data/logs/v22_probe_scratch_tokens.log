@@ -1,0 +1,32 @@
+number of parameters: 1.79M
+out-addition-additive-v22/ckpt.pt iter=9500  R=24 n_think=4
+
+[B1] ablation sweep (sum accuracy)
+  baseline      test_indist=1.000  test_hint=1.000  test_ood=1.000  test_far_ood=0.775  nines_8_16_22=1.000
+  zero tok 0    indist=0.000(-1.00)  hint=0.000(-1.00)  ood=0.000(-1.00)  far_ood=0.000(-0.78)  nines_8_16_22=0.000(-1.00)
+  zero tok 1    indist=0.420(-0.58)  hint=0.485(-0.52)  ood=0.525(-0.47)  far_ood=0.550(-0.22)  nines_8_16_22=0.133(-0.87)
+  zero tok 2    indist=0.995(-0.01)  hint=1.000(+0.00)  ood=1.000(+0.00)  far_ood=0.840(+0.06)  nines_8_16_22=1.000(+0.00)
+  zero tok 3    indist=0.675(-0.32)  hint=0.375(-0.62)  ood=0.245(-0.76)  far_ood=0.150(-0.62)  nines_8_16_22=0.508(-0.49)
+  zero tok all  indist=0.000(-1.00)  hint=0.000(-1.00)  ood=0.000(-1.00)  far_ood=0.000(-0.78)  nines_8_16_22=0.000(-1.00)
+  mean tok 0    indist=0.000(-1.00)  hint=0.000(-1.00)  ood=0.000(-1.00)  far_ood=0.000(-0.78)  nines_8_16_22=0.000(-1.00)
+  mean tok 1    indist=0.990(-0.01)  hint=0.760(-0.24)  ood=0.810(-0.19)  far_ood=0.715(-0.06)  nines_8_16_22=0.767(-0.23)
+  mean tok 2    indist=1.000(+0.00)  hint=1.000(+0.00)  ood=1.000(+0.00)  far_ood=0.815(+0.04)  nines_8_16_22=1.000(+0.00)
+  mean tok 3    indist=0.675(-0.32)  hint=0.375(-0.62)  ood=0.245(-0.76)  far_ood=0.140(-0.64)  nines_8_16_22=0.517(-0.48)
+  mean tok all  indist=0.000(-1.00)  hint=0.000(-1.00)  ood=0.000(-1.00)  far_ood=0.000(-0.78)  nines_8_16_22=0.000(-1.00)
+
+[B2] per-thinking-token attention role (rand L=16 + nines L=20)
+  rand16 tok0: recv(r1,r8,r20)=(0.183,0.103,0.063)  ->place(r1,r8,r20)=(0.67,0.20,0.21)  ->think r1=0.00
+  rand16 tok1: recv(r1,r8,r20)=(0.048,0.010,0.046)  ->place(r1,r8,r20)=(0.77,0.08,0.25)  ->think r1=0.05
+  rand16 tok2: recv(r1,r8,r20)=(0.081,0.046,0.042)  ->place(r1,r8,r20)=(0.68,0.08,0.25)  ->think r1=0.15
+  rand16 tok3: recv(r1,r8,r20)=(0.102,0.060,0.052)  ->place(r1,r8,r20)=(0.57,0.01,0.26)  ->think r1=0.25
+  nines20 tok0: recv(r1,r8,r20)=(0.180,0.078,0.100)  ->place(r1,r8,r20)=(0.67,0.33,0.31)  ->think r1=0.00
+  nines20 tok1: recv(r1,r8,r20)=(0.037,0.010,0.048)  ->place(r1,r8,r20)=(0.72,0.31,0.38)  ->think r1=0.12
+  nines20 tok2: recv(r1,r8,r20)=(0.071,0.074,0.050)  ->place(r1,r8,r20)=(0.63,0.30,0.20)  ->think r1=0.20
+  nines20 tok3: recv(r1,r8,r20)=(0.084,0.167,0.071)  ->place(r1,r8,r20)=(0.55,0.26,0.25)  ->think r1=0.28
+
+[B3] per-thinking-token linear probe of global quantities
+  total_carry  baseline=0.15  concat@r8=0.32 @r24=0.31   per-tok@r8=0.29,0.22,0.24,0.19
+  digit_count  baseline=0.09  concat@r8=0.98 @r24=1.00   per-tok@r8=0.91,0.81,0.89,0.93
+  max_chain    baseline=0.21  concat@r8=0.29 @r24=0.25   per-tok@r8=0.25,0.20,0.23,0.22
+
+saved -> out-addition-additive-v22\probe_thinking_tokens.json, dyn_B_thinking.png

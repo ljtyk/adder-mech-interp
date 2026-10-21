@@ -1,0 +1,246 @@
+{
+  "ckpt": "out-addition-additive-v22/ckpt.pt",
+  "iter": 9500,
+  "F1_injection": {
+    "1": {
+      "flip_rate": 0.0,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "2": {
+      "flip_rate": 0.0,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "3": {
+      "flip_rate": 0.0,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "4": {
+      "flip_rate": 0.0,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "5": {
+      "flip_rate": 0.0,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "6": {
+      "flip_rate": 0.008333333333333333,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "8": {
+      "flip_rate": 0.3333333333333333,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "10": {
+      "flip_rate": 0.7958333333333333,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "14": {
+      "flip_rate": 1.0,
+      "spill_rate": 0.0,
+      "clean_elsewhere": 1.0
+    },
+    "control_far_place_unchanged": 1.0
+  },
+  "F2_donor_patch": {
+    "inject_round": 8,
+    "mean_first_flip_by_k": {
+      "0": null,
+      "1": null,
+      "2": null,
+      "3": null,
+      "4": null,
+      "5": null,
+      "6": null
+    },
+    "slope_rounds_per_place": null,
+    "full_ripple_rate": 0.0,
+    "note": "donor-patch injection flips place p but does NOT propagate downstream"
+  },
+  "F3_direction_injection": {
+    "r3_a0.5": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r3_a1.0": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r3_a2.0": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r5_a0.5": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r5_a1.0": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r5_a2.0": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r8_a0.5": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r8_a1.0": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r8_a2.0": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r12_a0.5": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r12_a1.0": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "r12_a2.0": {
+      "first_flip_by_k": {
+        "0": null,
+        "1": null,
+        "2": null,
+        "3": null,
+        "4": null,
+        "5": null,
+        "6": null
+      },
+      "full_ripple": 0.0,
+      "slope": null
+    },
+    "note": "additive carry-direction injection had no effect at any round/alpha"
+  },
+  "F4_natural_wavefront": {
+    "first_flip_by_k": {
+      "0": 8.0,
+      "1": 3.925,
+      "2": 5.17,
+      "3": 10.82,
+      "4": 13.52,
+      "5": 16.025,
+      "6": 17.335,
+      "7": 19.01,
+      "8": 20.621794871794872,
+      "9": 22.49586776859504,
+      "10": 23.57777777777778,
+      "11": 23.0
+    },
+    "slope_rounds_per_place": 1.852954715871117,
+    "intercept": 5.1004524308895025,
+    "base_ok": 0.73,
+    "carry_ok": 1.0
+  }
+}

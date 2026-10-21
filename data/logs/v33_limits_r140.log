@@ -1,0 +1,31 @@
+Overriding: out_dir = out-addition-additive-v33
+Overriding: ckpt_name = ckpt_15000.pt
+Overriding: device = cpu
+Overriding: extra_rounds = 60
+number of parameters: 1.81M
+out-addition-additive-v33/ckpt_15000.pt iter=15000  slot cap=128 places  max_answer_digits=128  rounds=140 (base 80)
+
+ digits |   natural | carry-heavy   (n=200 each, exact-match)
+----------------------------------------
+     24 |     1.000 |       1.000
+     26 |     1.000 |       1.000
+     28 |     0.995 |       1.000
+     30 |     1.000 |       1.000
+     32 |     1.000 |       1.000
+     36 |     1.000 |       1.000
+     40 |     1.000 |       1.000
+     44 |     0.995 |       1.000
+     48 |     1.000 |       0.995
+     52 |     1.000 |       1.000
+     56 |     0.995 |       1.000
+     60 |     1.000 |       1.000
+     64 |     0.995 |       1.000
+     72 |     0.990 |       0.995
+     80 |     0.740 |       0.755
+     96 |     0.565 |       0.555
+    112 |     0.345 |       0.050
+    124 |     0.180 |       0.015
+natural: first <0.99 at 80 digits, first <0.5 at 112 digits
+carry_heavy: first <0.99 at 80 digits, first <0.5 at 112 digits
+
+saved -> out-addition-additive-v33\eval_limits_r140.json

@@ -1,0 +1,13 @@
+number of parameters: 1.79M
+out-addition-additive-v22/ckpt.pt iter=9500  R=24 P=30 n_think=4 T=34 heads=6
+  rand6    L= 6  r6: down(-)=0.236 up(+)=0.059 self=0.056 ->think=0.162   peak-offset r6=-1
+  rand10   L=10  r6: down(-)=0.282 up(+)=0.035 self=0.047 ->think=0.143   peak-offset r6=-1
+  rand16   L=16  r6: down(-)=0.272 up(+)=0.072 self=0.021 ->think=0.325   peak-offset r6=-1
+  rand20   L=20  r6: down(-)=0.256 up(+)=0.103 self=0.034 ->think=0.371   peak-offset r6=-1
+  nines6   L= 6  r6: down(-)=0.257 up(+)=0.048 self=0.032 ->think=0.172   peak-offset r6=-1
+  nines10  L=10  r6: down(-)=0.319 up(+)=0.036 self=0.030 ->think=0.129   peak-offset r6=-1
+  nines16  L=16  r6: down(-)=0.303 up(+)=0.077 self=0.024 ->think=0.308   peak-offset r6=-1
+  nines20  L=20  r6: down(-)=0.283 up(+)=0.108 self=0.044 ->think=0.331   peak-offset r6=-1
+
+saved -> out-addition-additive-v22\probe_combiner_attn.json
+plots -> out-addition-additive-v22/dyn_D_attn_maps.png, dyn_D_offset_vs_round.png, dyn_D_thinking_traffic.png, dyn_D_per_head.png
